@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-launcher.py - Counter-Strike 2 Sub-Tick Replay & Anomaly Studio Desktop Control Center
+launcher.py - Counter-Strike 2 Replay & Combat Anomaly Navigator Desktop Control Center
 
-A modern, high-performance desktop replay analysis studio and anti-cheat diagnostic station:
+A streamlined, high-performance desktop replay analysis station and demo viewer:
   1. Automated CS2 and Steam auto-discovery across all library drives.
-  2. Instant .dem match parsing with full player roster extraction and metadata indexing.
+  2. Instant .dem match parsing with full player roster extraction and live event indexing.
   3. Automated Combat & Anti-Cheat Anomaly Engine:
      - Aimbot viewangle snap velocity analysis (Δθ > 35°/tick).
      - Sub-tick triggerbot micro-slice timing clustering (< 2.0 ms).
      - Lag compensation desync and backtrack rewind auditing.
   4. 1-Click Netcon Loopback Synchronization:
-     - Instantly seeks CS2 to the exact anomaly tick (demo_gototick <tick - 32>).
-     - Locks spectator camera onto the suspect (spec_player "<player>").
-     - Controls playback speed, pause/play, camera modes, and debug overlays.
-  5. Interactive visual timeline scrubber and sub-tick micro-slice distribution graphing.
+     - Instantly seeks CS2 to the exact lead-up tick before the action (demo_gototick <tick - lead>).
+     - Locks spectator camera directly into the suspect's 1st-person view (spec_mode 1 & spec_player "<player>").
+     - Automatically slows down playback (0.25x slow-mo) for effortless visual auditing.
+     - Controls playback speed, pause/play, camera modes, and in-engine debug overlays.
+  5. Interactive visual timeline scrubber with highlighted audit intervals.
 
 Zero pip dependencies: Pure Python standard library (tkinter + ctypes + socket).
 """
@@ -28,7 +29,7 @@ import io
 import json
 import zipfile
 import urllib.request
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -38,13 +39,13 @@ from demo_parser import CS2DemoSummary
 
 
 class ReplayStudioApp:
-    """Desktop Replay Studio & Anomaly Inspector for Counter-Strike 2."""
+    """Desktop Replay Studio & Combat Anomaly Navigator for Counter-Strike 2."""
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Counter-Strike 2 // Sub-Tick Replay & Anomaly Studio")
-        self.root.geometry("1140x840")
-        self.root.minsize(980, 720)
+        self.root.title("Counter-Strike 2 // Replay & Combat Anomaly Navigator")
+        self.root.geometry("1120x800")
+        self.root.minsize(960, 680)
 
         # Dark Cyberpunk / CS2 Palette
         self.bg_dark = "#090d16"
@@ -56,7 +57,6 @@ class ReplayStudioApp:
         self.accent_emerald = "#34d399"
         self.accent_coral = "#f43f5e"
         self.accent_amber = "#fbbf24"
-        self.accent_purple = "#c084fc"
         self.text_main = "#f8fafc"
         self.text_muted = "#94a3b8"
 
@@ -90,7 +90,6 @@ class ReplayStudioApp:
         self.var_filter_player = tk.StringVar(value="All Players")
         self.var_filter_severity = tk.StringVar(value="All Severities")
         self.var_filter_search = tk.StringVar(value="")
-        self.var_selected_telemetry_player = tk.StringVar(value="")
 
         # Automated Anomaly Jump & Audit Configuration
         self.var_autojump_on_click = tk.BooleanVar(value=True)
@@ -118,7 +117,7 @@ class ReplayStudioApp:
             if os.path.exists(staged):
                 self.load_demo(staged)
 
-        self.log("CS2 Sub-Tick Replay & Anomaly Studio initialized.")
+        self.log("CS2 Replay & Combat Anomaly Navigator initialized.")
         if self.cs2_exe:
             self.log(f"Auto-detected Counter-Strike 2: {os.path.basename(self.cs2_exe)}")
         else:
@@ -132,24 +131,6 @@ class ReplayStudioApp:
     def _setup_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
-
-        style.configure(
-            "Studio.TNotebook",
-            background=self.bg_dark,
-            borderwidth=0
-        )
-        style.configure(
-            "Studio.TNotebook.Tab",
-            background=self.card_bg,
-            foreground=self.text_muted,
-            padding=[16, 8],
-            font=("Segoe UI", 9, "bold")
-        )
-        style.map(
-            "Studio.TNotebook.Tab",
-            background=[("selected", self.panel_bg)],
-            foreground=[("selected", self.accent_cyan)]
-        )
 
         style.configure(
             "Treeview",
@@ -171,12 +152,12 @@ class ReplayStudioApp:
 
     def _build_ui(self):
         # 1. Top Header Bar
-        header = tk.Frame(self.root, bg="#0d1117", height=60, padx=18, pady=10)
+        header = tk.Frame(self.root, bg="#0d1117", height=56, padx=16, pady=8)
         header.pack(fill="x", side="top")
 
         lbl_title = tk.Label(
             header,
-            text="COUNTER-STRIKE 2 // SUB-TICK REPLAY & ANOMALY STUDIO",
+            text="COUNTER-STRIKE 2 // REPLAY & COMBAT ANOMALY NAVIGATOR",
             font=("Segoe UI", 12, "bold"),
             fg=self.accent_cyan,
             bg="#0d1117"
@@ -185,7 +166,7 @@ class ReplayStudioApp:
 
         lbl_sub = tk.Label(
             header,
-            text="OFFLINE INSPECTOR & LIVE NETCON LINK",
+            text="DEMO VIEWER // NETCON ENGINE LINK",
             font=("Consolas", 8, "bold"),
             fg="#c084fc",
             bg="#2e1065",
@@ -227,7 +208,7 @@ class ReplayStudioApp:
         btn_shortcut.pack(side="right", padx=4)
 
         # 2. Match Ingestion & CS2 Engine Controls (Top Deck)
-        top_deck = tk.Frame(self.root, bg=self.bg_dark, padx=14, pady=8)
+        top_deck = tk.Frame(self.root, bg=self.bg_dark, padx=14, pady=6)
         top_deck.pack(fill="x")
 
         # Left Card: Demo Ingestion
@@ -242,21 +223,11 @@ class ReplayStudioApp:
         # 4. Interactive Timeline Scrubber Bar
         self._build_timeline_scrubber()
 
-        # 5. Main Notebook (Anomaly Navigator, Sub-Tick Telemetry, RE Math Visualizer)
-        self.notebook = ttk.Notebook(self.root, style="Studio.TNotebook")
-        self.notebook.pack(fill="both", expand=True, padx=14, pady=(6, 4))
+        # 5. Dedicated Full-Height Anomaly & Combat Event Navigator
+        main_container = tk.Frame(self.root, bg=self.card_bg, padx=12, pady=8, relief="groove", bd=1)
+        main_container.pack(fill="both", expand=True, padx=14, pady=(4, 4))
 
-        self.tab_anomalies = tk.Frame(self.notebook, bg=self.card_bg, padx=10, pady=8)
-        self.tab_telemetry = tk.Frame(self.notebook, bg=self.card_bg, padx=10, pady=8)
-        self.tab_re_inspector = tk.Frame(self.notebook, bg=self.card_bg, padx=10, pady=8)
-
-        self.notebook.add(self.tab_anomalies, text="  🚨 Automated Anomaly & Combat Scanner  ")
-        self.notebook.add(self.tab_telemetry, text="  🎯 Sub-Tick Micro-Slice & Player Telemetry  ")
-        self.notebook.add(self.tab_re_inspector, text="  📐 Reverse-Engineering Visualizer & Simulator  ")
-
-        self._build_tab_anomalies()
-        self._build_tab_telemetry()
-        self._build_tab_re_inspector()
+        self._build_anomaly_navigator(main_container)
 
         # 6. Bottom Diagnostics Console
         self._build_console()
@@ -395,8 +366,8 @@ class ReplayStudioApp:
         bar.pack(fill="x", padx=14, pady=(2, 2))
 
         # Playback navigation
-        lbl_transport = tk.Label(bar, text="NETCON ENGINE CONTROLS:", font=("Consolas", 8, "bold"), fg=self.accent_cyan, bg="#0f172a")
-        lbl_transport.pack(side="left", padx=(0, 10))
+        lbl_transport = tk.Label(bar, text="NETCON CONTROLS:", font=("Consolas", 8, "bold"), fg=self.accent_cyan, bg="#0f172a")
+        lbl_transport.pack(side="left", padx=(0, 8))
 
         btn_r_back = tk.Button(bar, text="⏮ -1 Round", font=("Segoe UI", 8), bg="#1e293b", fg=self.text_main, relief="flat", padx=6, pady=1, cursor="hand2",
                                command=lambda: self.seek_relative_ticks(-64 * 115))
@@ -419,14 +390,14 @@ class ReplayStudioApp:
         btn_r_fwd.pack(side="left", padx=2)
 
         # Timescale selector
-        tk.Label(bar, text="Speed:", font=("Segoe UI", 8), fg=self.text_muted, bg="#0f172a").pack(side="left", padx=(12, 4))
+        tk.Label(bar, text="Speed:", font=("Segoe UI", 8), fg=self.text_muted, bg="#0f172a").pack(side="left", padx=(10, 4))
         for speed in (0.25, 0.5, 1.0, 2.0, 4.0):
             btn_spd = tk.Button(bar, text=f"{speed}x", font=("Consolas", 8), bg="#1e293b", fg=self.accent_cyan if speed == 1.0 else self.text_muted,
                                 relief="flat", padx=4, pady=1, cursor="hand2", command=lambda s=speed: self.set_engine_timescale(s))
             btn_spd.pack(side="left", padx=1)
 
         # Camera mode selector
-        tk.Label(bar, text="Cam:", font=("Segoe UI", 8), fg=self.text_muted, bg="#0f172a").pack(side="left", padx=(12, 4))
+        tk.Label(bar, text="Cam:", font=("Segoe UI", 8), fg=self.text_muted, bg="#0f172a").pack(side="left", padx=(10, 4))
         btn_cam1 = tk.Button(bar, text="1st Person", font=("Segoe UI", 8), bg="#1e293b", fg=self.text_main, relief="flat", padx=6, pady=1, cursor="hand2",
                              command=lambda: self.set_camera_perspective(1))
         btn_cam1.pack(side="left", padx=2)
@@ -456,7 +427,7 @@ class ReplayStudioApp:
         lbl_row = tk.Frame(frame, bg=self.bg_dark)
         lbl_row.pack(fill="x")
 
-        tk.Label(lbl_row, text="MATCH TIMELINE SCRUBBER (Click anywhere to jump in CS2):", font=("Consolas", 8, "bold"), fg=self.text_muted, bg=self.bg_dark).pack(side="left")
+        tk.Label(lbl_row, text="MATCH TIMELINE SCRUBBER (Click anywhere to seek CS2):", font=("Consolas", 8, "bold"), fg=self.text_muted, bg=self.bg_dark).pack(side="left")
         self.lbl_scrub_pos = tk.Label(lbl_row, text="Tick 0 (00:00) / 100000", font=("Consolas", 8, "bold"), fg=self.accent_cyan, bg=self.bg_dark)
         self.lbl_scrub_pos.pack(side="right")
 
@@ -482,7 +453,7 @@ class ReplayStudioApp:
         # Draw round boundaries (~64 ticks * 115 seconds = 7360 ticks per round)
         ticks_per_round = 7360
         r_num = 1
-        cur_r_tick = 1000
+        cur_r_tick = 24000
         while cur_r_tick < self.max_demo_tick:
             rx = int((cur_r_tick / self.max_demo_tick) * w)
             c.create_line(rx, 0, rx, h, fill="#1f2937", width=1)
@@ -576,27 +547,25 @@ class ReplayStudioApp:
             self.log("Netcon -> toggle sv_showimpacts 0 1")
 
     # =========================================================================
-    # TAB 1: AUTOMATED ANOMALY & COMBAT NAVIGATOR
+    # DEDICATED FULL-HEIGHT COMBAT & ANOMALY NAVIGATOR
     # =========================================================================
-    def _build_tab_anomalies(self):
-        tab = self.tab_anomalies
-
+    def _build_anomaly_navigator(self, container):
         # Filter bar
-        filter_bar = tk.Frame(tab, bg=self.card_bg, pady=4)
+        filter_bar = tk.Frame(container, bg=self.card_bg, pady=4)
         filter_bar.pack(fill="x")
 
-        tk.Label(filter_bar, text="Category:", font=("Segoe UI", 9), fg=self.text_muted, bg=self.card_bg).pack(side="left")
+        tk.Label(filter_bar, text="Category:", font=("Segoe UI", 9, "bold"), fg=self.accent_cyan, bg=self.card_bg).pack(side="left")
         self.cb_filter_cat = ttk.Combobox(
             filter_bar,
             textvariable=self.var_filter_category,
             values=["All Categories", "Aimbot Snaps (Δθ > 35°)", "Sub-Tick Triggerbots (w < 2ms)", "Backtrack & Desync (> 4u)", "Combat Kills & Hits"],
             state="readonly",
-            width=28
+            width=26
         )
         self.cb_filter_cat.pack(side="left", padx=(4, 10))
         self.cb_filter_cat.bind("<<ComboboxSelected>>", lambda e: self.apply_anomaly_filters())
 
-        tk.Label(filter_bar, text="Suspect:", font=("Segoe UI", 9), fg=self.text_muted, bg=self.card_bg).pack(side="left")
+        tk.Label(filter_bar, text="Suspect:", font=("Segoe UI", 9, "bold"), fg=self.accent_cyan, bg=self.card_bg).pack(side="left")
         self.cb_filter_player = ttk.Combobox(
             filter_bar,
             textvariable=self.var_filter_player,
@@ -607,13 +576,13 @@ class ReplayStudioApp:
         self.cb_filter_player.pack(side="left", padx=(4, 10))
         self.cb_filter_player.bind("<<ComboboxSelected>>", lambda e: self.apply_anomaly_filters())
 
-        tk.Label(filter_bar, text="Severity:", font=("Segoe UI", 9), fg=self.text_muted, bg=self.card_bg).pack(side="left")
+        tk.Label(filter_bar, text="Severity:", font=("Segoe UI", 9, "bold"), fg=self.accent_cyan, bg=self.card_bg).pack(side="left")
         self.cb_filter_sev = ttk.Combobox(
             filter_bar,
             textvariable=self.var_filter_severity,
             values=["All Severities", "CRITICAL Only", "SUSPICIOUS Only", "INFO Only"],
             state="readonly",
-            width=16
+            width=15
         )
         self.cb_filter_sev.pack(side="left", padx=(4, 10))
         self.cb_filter_sev.bind("<<ComboboxSelected>>", lambda e: self.apply_anomaly_filters())
@@ -624,7 +593,7 @@ class ReplayStudioApp:
         ent_search.bind("<KeyRelease>", lambda e: self.apply_anomaly_filters())
 
         # Table frame
-        tbl_frame = tk.Frame(tab, bg=self.card_bg)
+        tbl_frame = tk.Frame(container, bg=self.card_bg)
         tbl_frame.pack(fill="both", expand=True, pady=6)
 
         columns = ("tick", "round", "time", "severity", "player", "category", "weapon", "metrics")
@@ -635,18 +604,18 @@ class ReplayStudioApp:
         self.tree_anomalies.heading("time", text="Time")
         self.tree_anomalies.heading("severity", text="Severity")
         self.tree_anomalies.heading("player", text="Suspect / Player")
-        self.tree_anomalies.heading("category", text="Anomaly Category")
+        self.tree_anomalies.heading("category", text="Combat Event / Anomaly Category")
         self.tree_anomalies.heading("weapon", text="Weapon")
         self.tree_anomalies.heading("metrics", text="Telemetry & Diagnostic Metrics")
 
         self.tree_anomalies.column("tick", width=80, anchor="center")
         self.tree_anomalies.column("round", width=60, anchor="center")
         self.tree_anomalies.column("time", width=70, anchor="center")
-        self.tree_anomalies.column("severity", width=90, anchor="center")
+        self.tree_anomalies.column("severity", width=95, anchor="center")
         self.tree_anomalies.column("player", width=120, anchor="w")
-        self.tree_anomalies.column("category", width=160, anchor="w")
-        self.tree_anomalies.column("weapon", width=90, anchor="w")
-        self.tree_anomalies.column("metrics", width=340, anchor="w")
+        self.tree_anomalies.column("category", width=220, anchor="w")
+        self.tree_anomalies.column("weapon", width=95, anchor="w")
+        self.tree_anomalies.column("metrics", width=330, anchor="w")
 
         tree_scroll = ttk.Scrollbar(tbl_frame, orient="vertical", command=self.tree_anomalies.yview)
         self.tree_anomalies.configure(yscrollcommand=tree_scroll.set)
@@ -663,7 +632,7 @@ class ReplayStudioApp:
         self.tree_anomalies.bind("<Double-1>", lambda e: self.jump_selected_anomaly())
 
         # Action bar under table
-        act_bar = tk.Frame(tab, bg=self.card_bg, pady=6)
+        act_bar = tk.Frame(container, bg=self.card_bg, pady=6)
         act_bar.pack(fill="x")
 
         # Top row: Jump button, Lead-Up combo, Slow-mo combo, and Auto-Jump toggle
@@ -730,7 +699,7 @@ class ReplayStudioApp:
 
         self.lbl_selected_detail = tk.Label(
             detail_row,
-            text="Click any anomaly row to jump ~1.5s before the action directly into the suspect's 1st-person view in slow motion.",
+            text="Click any combat event row to jump ~1.5s before the action directly into the player's 1st-person view in slow motion.",
             font=("Consolas", 9),
             fg=self.accent_emerald,
             bg=self.card_bg,
@@ -871,258 +840,13 @@ class ReplayStudioApp:
         # Dispatch reinforced Netcon sequence (goto lead tick -> 1st person -> spectate -> slow motion)
         if self.netcon.is_connected() or self.netcon.try_connect():
             self.netcon.jump_and_inspect(tick=tick, player_name=player, lead_ticks=lead_ticks, timescale=timescale)
-            msg = f"🎯 Jumped: {player} (1st Person) | Lead: -{lead_sec}s (Tick {lead_tick:06d}) -> Snap @ Tick {tick:06d} | Speed: {timescale}x"
+            msg = f"🎯 Jumped: {player} (1st Person) | Lead: -{lead_sec}s (Tick {lead_tick:06d}) -> Action @ Tick {tick:06d} | Speed: {timescale}x"
             self.log(msg)
             self.lbl_selected_detail.config(text=msg, fg=self.accent_emerald)
         else:
-            msg = f"Target Tick {lead_tick:06d} set (Impact @ {tick:06d}). Netcon not connected yet."
+            msg = f"Target Tick {lead_tick:06d} set (Action @ {tick:06d}). Netcon not connected yet."
             self.log(msg)
             self.lbl_selected_detail.config(text=msg, fg=self.accent_amber)
-
-    # =========================================================================
-    # TAB 2: SUB-TICK MICRO-SLICE & PLAYER TELEMETRY
-    # =========================================================================
-    def _build_tab_telemetry(self):
-        tab = self.tab_telemetry
-
-        # Top suspect selector
-        top_bar = tk.Frame(tab, bg=self.card_bg, pady=6)
-        top_bar.pack(fill="x")
-
-        tk.Label(top_bar, text="Select Player / Suspect to Audit:", font=("Segoe UI", 9, "bold"), fg=self.accent_cyan, bg=self.card_bg).pack(side="left")
-        self.cb_telem_player = ttk.Combobox(
-            top_bar,
-            textvariable=self.var_selected_telemetry_player,
-            state="readonly",
-            width=20
-        )
-        self.cb_telem_player.pack(side="left", padx=10)
-        self.cb_telem_player.bind("<<ComboboxSelected>>", lambda e: self.update_player_telemetry_display())
-
-        self.lbl_player_stats = tk.Label(
-            top_bar,
-            text="Kills: -- | Hits: -- | Snaps: -- | Triggers: -- | Threat Rating: --",
-            font=("Consolas", 9, "bold"),
-            fg=self.text_main,
-            bg=self.card_bg
-        )
-        self.lbl_player_stats.pack(side="left", padx=12)
-
-        # Graphs container
-        graphs_frame = tk.Frame(tab, bg=self.card_bg)
-        graphs_frame.pack(fill="both", expand=True, pady=6)
-
-        # Left Graph: Sub-Tick Micro-Slice (0.0 to 15.625 ms)
-        card_micro = tk.LabelFrame(
-            graphs_frame,
-            text=" SUB-TICK ATTACK MICRO-SLICE DISPERSION (15.625 ms Tick Window) ",
-            font=("Consolas", 8, "bold"),
-            bg=self.card_bg, fg=self.accent_indigo,
-            padx=8, pady=6, relief="groove", bd=1
-        )
-        card_micro.pack(side="left", fill="both", expand=True, padx=(0, 6))
-
-        self.canvas_microslice = tk.Canvas(card_micro, bg="#0d1117", highlightthickness=1, highlightbackground=self.border_col)
-        self.canvas_microslice.pack(fill="both", expand=True)
-
-        # Right Graph: Angular Snap Velocity Spikes (Δθ / tick)
-        card_snaps = tk.LabelFrame(
-            graphs_frame,
-            text=" ANGULAR VELOCITY SPIKE AUDIT (Aimbot Snap Threshold: 35.0° / tick) ",
-            font=("Consolas", 8, "bold"),
-            bg=self.card_bg, fg=self.accent_indigo,
-            padx=8, pady=6, relief="groove", bd=1
-        )
-        card_snaps.pack(side="right", fill="both", expand=True, padx=(6, 0))
-
-        self.canvas_snaps = tk.Canvas(card_snaps, bg="#0d1117", highlightthickness=1, highlightbackground=self.border_col)
-        self.canvas_snaps.pack(fill="both", expand=True)
-
-    def update_player_telemetry_display(self):
-        player = self.var_selected_telemetry_player.get()
-        if not player or not self.analytics:
-            return
-
-        profiles = self.analytics.get("player_profiles", {})
-        profile = profiles.get(player)
-        if not profile:
-            return
-
-        kills = profile.get("kills", 0)
-        hits = profile.get("hits", 0)
-        snaps = profile.get("snaps", 0)
-        triggers = profile.get("triggers", 0)
-        anomalies = profile.get("anomalies", 0)
-
-        # Threat rating
-        threat = "CLEAN (PARITY OK)"
-        threat_col = self.accent_emerald
-        if snaps >= 2 or triggers >= 2:
-            threat = "HIGH ANOMALY DETECTED (INVESTIGATE)"
-            threat_col = self.accent_coral
-        elif anomalies >= 1:
-            threat = "SUSPICIOUS (TRIGGER / SNAP CLUSTERS)"
-            threat_col = self.accent_amber
-
-        self.lbl_player_stats.config(
-            text=f"Kills: {kills} | Hits: {hits} | Snaps: {snaps} | Triggers: {triggers} | Anomaly: {threat}",
-            fg=threat_col
-        )
-
-        # Draw Canvas 1: Sub-Tick Micro-Slice
-        c1 = self.canvas_microslice
-        c1.delete("all")
-        w1 = c1.winfo_width()
-        h1 = c1.winfo_height()
-        if w1 > 20 and h1 > 20:
-            # Draw 15.625 ms axes
-            c1.create_rectangle(10, 10, w1 - 10, h1 - 30, fill="#080c14", outline="#1f2937")
-            c1.create_text(15, h1 - 16, text="0.0 ms (w=0.0)", anchor="w", fill="#64748b", font=("Consolas", 8))
-            c1.create_text(w1 // 2, h1 - 16, text="7.81 ms (w=0.5)", anchor="center", fill="#64748b", font=("Consolas", 8))
-            c1.create_text(w1 - 15, h1 - 16, text="15.625 ms (w=1.0)", anchor="e", fill="#64748b", font=("Consolas", 8))
-
-            # Triggerbot Danger Zone (< 1.5 ms)
-            danger_w = int(10 + (w1 - 20) * (1.5 / 15.625))
-            c1.create_rectangle(10, 10, danger_w, h1 - 30, fill="#3b0707", outline="")
-            c1.create_text(danger_w // 2, 22, text="TRIGGER CLUSTER ZONE", fill="#f87171", font=("Consolas", 7, "bold"))
-
-            samples = profile.get("subtick_samples", [])
-            for s in samples:
-                sx = int(10 + (w1 - 20) * max(0.0, min(1.0, s)))
-                col = "#ef4444" if s < 0.10 else "#38bdf8"
-                c1.create_line(sx, 12, sx, h1 - 30, fill=col, width=2)
-                c1.create_oval(sx - 3, h1 - 38, sx + 3, h1 - 32, fill=col, outline="")
-
-        # Draw Canvas 2: Snap Velocity Spikes
-        c2 = self.canvas_snaps
-        c2.delete("all")
-        w2 = c2.winfo_width()
-        h2 = c2.winfo_height()
-        if w2 > 20 and h2 > 20:
-            c2.create_rectangle(10, 10, w2 - 10, h2 - 30, fill="#080c14", outline="#1f2937")
-
-            # 35.0 deg threshold line
-            ty = int(h2 - 30 - ((h2 - 40) * (35.0 / 60.0)))
-            c2.create_line(10, ty, w2 - 10, ty, fill="#f59e0b", dash=(4, 2), width=1)
-            c2.create_text(w2 - 15, ty - 8, text="35.0° SNAP THRESHOLD", anchor="e", fill="#f59e0b", font=("Consolas", 7))
-
-            snaps_data = profile.get("snap_velocities", [])
-            if snaps_data:
-                step = max(1, (w2 - 30) // max(1, len(snaps_data)))
-                for idx, (t, deg) in enumerate(snaps_data):
-                    px = 15 + idx * step
-                    py = int(h2 - 30 - ((h2 - 40) * min(1.0, deg / 60.0)))
-                    col = "#ef4444" if deg > 35.0 else "#34d399"
-                    c2.create_line(px, h2 - 30, px, py, fill=col, width=3)
-                    c2.create_oval(px - 3, py - 3, px + 3, py + 3, fill=col, outline="")
-
-    # =========================================================================
-    # TAB 3: REVERSE-ENGINEERING VISUALIZER & SIMULATOR
-    # =========================================================================
-    def _build_tab_re_inspector(self):
-        tab = self.tab_re_inspector
-
-        col_left = tk.Frame(tab, bg=self.card_bg)
-        col_left.pack(side="left", fill="both", expand=True, padx=(0, 6))
-
-        col_right = tk.Frame(tab, bg=self.card_bg)
-        col_right.pack(side="right", fill="both", expand=True, padx=(6, 0))
-
-        # 2D Mini Radar
-        card_radar = tk.LabelFrame(col_left, text=" 2D SPATIAL OVERVIEW & KINEMATICS RADAR ", font=("Consolas", 8, "bold"), bg=self.card_bg, fg=self.accent_indigo, padx=8, pady=6, relief="groove")
-        card_radar.pack(fill="both", expand=True)
-
-        self.canvas_radar = tk.Canvas(card_radar, bg="#0d1117", highlightthickness=1, highlightbackground=self.border_col)
-        self.canvas_radar.pack(fill="both", expand=True)
-        self.canvas_radar.bind("<Configure>", lambda e: self._draw_radar())
-
-        # Math breakdown & Direct Netcon Dispatch
-        card_math = tk.LabelFrame(col_right, text=" SUB-TICK LAG COMPENSATION & REWIND PROTOCOL ", font=("Consolas", 8, "bold"), bg=self.card_bg, fg=self.accent_indigo, padx=10, pady=8, relief="groove")
-        card_math.pack(fill="x", pady=(0, 8))
-
-        equations = [
-            "Source 2 Sub-Tick Continuous Interpolation:",
-            "  P(w) = (1.0 - w) * P_tick0 + w * P_tick1   [w ∈ [0.0, 1.0)]",
-            "Lag Compensation Rewind Buffer Window:",
-            "  t_rewind = t_cur - t_ping - lerp_amount    (Bound: 0.0 to 200.0 ms)",
-            "Raycast Bounding Box Intersection Delta:",
-            "  Δ = || Ray_Impact - BoundingBox_Apex ||    (Hit Valid: Δ < 1.25 u)"
-        ]
-        for eq in equations:
-            fg = self.accent_cyan if "P(w)" in eq or "t_rewind" in eq or "Δ" in eq else self.text_muted
-            tk.Label(card_math, text=eq, font=("Consolas", 8), fg=fg, bg=self.card_bg, anchor="w").pack(fill="x", pady=1)
-
-        card_dispatch = tk.LabelFrame(col_right, text=" DIRECT CS2 CONSOLE DISPATCHER (-netconport) ", font=("Consolas", 8, "bold"), bg=self.card_bg, fg=self.accent_indigo, padx=10, pady=8, relief="groove")
-        card_dispatch.pack(fill="both", expand=True)
-
-        row_cmd = tk.Frame(card_dispatch, bg=self.card_bg)
-        row_cmd.pack(fill="x", pady=4)
-
-        self.var_cmd_input = tk.StringVar(value="sv_showlagcompensation 1")
-        ent_cmd = tk.Entry(row_cmd, textvariable=self.var_cmd_input, font=("Consolas", 9), bg="#0d1117", fg=self.accent_cyan, insertbackground="#fff")
-        ent_cmd.pack(side="left", fill="x", expand=True, padx=(0, 6))
-
-        btn_send = tk.Button(row_cmd, text="Send Command", font=("Segoe UI", 9, "bold"), bg="#2563eb", fg="#ffffff", relief="flat", padx=10, pady=2, cursor="hand2",
-                             command=self._send_direct_netcon_cmd)
-        btn_send.pack(side="right")
-
-        tk.Label(card_dispatch, text="Quick Commands (Click to dispatch):", font=("Segoe UI", 8, "bold"), fg=self.text_muted, bg=self.card_bg).pack(anchor="w", pady=(6, 2))
-
-        quick_cmds = [
-            ("cl_drawhud 0", "Hide standard HUD"),
-            ("r_drawothermodels 2", "Toggle wireframe player models"),
-            ("sv_showimpacts 1", "Show red/blue bullet impact boxes"),
-            ("demo_timescale 0.1", "Ultra slow-motion (0.1x)"),
-            ("demo_timescale 1.0", "Reset playback speed (1.0x)")
-        ]
-        for cmd, desc in quick_cmds:
-            btn_q = tk.Button(card_dispatch, text=f"{cmd}  ({desc})", font=("Consolas", 8), bg="#1e293b", fg=self.text_main, relief="flat", anchor="w", padx=6, pady=2, cursor="hand2",
-                              command=lambda c=cmd: self._send_quick_cmd(c))
-            btn_q.pack(fill="x", pady=1.5)
-
-    def _draw_radar(self):
-        c = self.canvas_radar
-        c.delete("all")
-        w = c.winfo_width()
-        h = c.winfo_height()
-        if w < 20 or h < 20:
-            return
-
-        cx, cy = w // 2, h // 2
-        c.create_rectangle(10, 10, w - 10, h - 10, fill="#080c14", outline="#1f2937")
-
-        # Compass circles
-        for r in (40, 80, 120):
-            c.create_oval(cx - r, cy - r, cx + r, cy + r, outline="#1e293b", dash=(2, 2))
-
-        c.create_line(cx, 10, cx, h - 10, fill="#1e293b")
-        c.create_line(10, cy, w - 10, cy, fill="#1e293b")
-
-        # Player point
-        c.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, fill="#38bdf8", outline="#ffffff")
-        c.create_text(cx + 8, cy - 8, text="Suspect Origin (0,0)", fill="#38bdf8", font=("Consolas", 8, "bold"), anchor="w")
-
-        # Simulated bullet ray & view vector
-        c.create_line(cx, cy, cx + 70, cy - 50, fill="#ef4444", width=2, arrow="last")
-        c.create_oval(cx + 66, cy - 54, cx + 74, cy - 46, fill="#f59e0b", outline="")
-        c.create_text(cx + 76, cy - 54, text="Impact / Hitbox Apex #6", fill="#f59e0b", font=("Consolas", 8))
-
-    def _send_direct_netcon_cmd(self):
-        cmd = self.var_cmd_input.get().strip()
-        if not cmd:
-            return
-        if self.netcon.is_connected() or self.netcon.try_connect():
-            self.netcon.send_command(cmd)
-            self.log(f"Netcon Dispatched: {cmd}")
-        else:
-            self.log(f"Netcon Not Connected: Command '{cmd}' queued.")
-
-    def _send_quick_cmd(self, cmd: str):
-        if self.netcon.is_connected() or self.netcon.try_connect():
-            self.netcon.send_command(cmd)
-            self.log(f"Netcon Dispatched: {cmd}")
-        else:
-            self.log(f"Netcon Not Connected: Cannot send '{cmd}'.")
 
     # =========================================================================
     # CONSOLE & ENGINE LINK BACKGROUND THREADS
@@ -1135,7 +859,7 @@ class ReplayStudioApp:
 
         self.txt_console = tk.Text(
             frame,
-            height=4,
+            height=3,
             bg="#030712",
             fg=self.accent_cyan,
             font=("Consolas", 8),
@@ -1157,11 +881,9 @@ class ReplayStudioApp:
                 time.sleep(1.5)
                 is_conn = self.netcon.is_connected()
                 if not is_conn and self.cs2_proc and self.cs2_proc.poll() is None:
-                    # Attempt connection if CS2 is active
                     self.netcon.try_connect()
                     is_conn = self.netcon.is_connected()
 
-                # Update status label on main thread
                 status_txt = "● Netcon: Connected (2121)" if is_conn else "○ Netcon: Standby"
                 status_col = self.accent_emerald if is_conn else self.text_muted
                 self.root.after(0, lambda: self.lbl_netcon_status.config(text=status_txt, fg=status_col))
@@ -1204,20 +926,16 @@ class ReplayStudioApp:
             # Update comboboxes
             p_values = ["All Players"] + players
             self.cb_filter_player["values"] = p_values
-            self.cb_telem_player["values"] = players
-            if players:
-                self.var_selected_telemetry_player.set(players[0])
 
-            # Run comprehensive anomaly scan
+            # Run genuine live combat event scan
             events, analytics = CS2DemoSummary.scan_anomalies(self.selected_demo_path, max_events=120)
             self.anomalies = events
             self.analytics = analytics
 
-            self.lbl_meta_events.config(text=f"Anomalies: {len(events)}")
-            self.log(f"Autoscan complete: {len(events)} events (Snaps: {analytics.get('snaps_count')}, Triggers: {analytics.get('trigger_count')}, Desyncs: {analytics.get('desync_count')})")
+            self.lbl_meta_events.config(text=f"Events: {len(events)}")
+            self.log(f"Scan complete: {len(events)} live combat events indexed (Snaps: {analytics.get('snaps_count')}, Triggers: {analytics.get('trigger_count')}, Desyncs: {analytics.get('desync_count')})")
 
             self.apply_anomaly_filters()
-            self.update_player_telemetry_display()
             self.draw_timeline()
         else:
             self.log(f"Error reading demo: {info.get('error', 'Invalid format')}")
@@ -1309,7 +1027,7 @@ class ReplayStudioApp:
                     return json.load(f)
             except Exception:
                 pass
-        return {"commit_sha": "569e1f6", "version": "1.6.0"}
+        return {"commit_sha": "c5d4f11", "version": "1.7.0"}
 
     @staticmethod
     def _get_desktop_path() -> str:
@@ -1336,7 +1054,7 @@ class ReplayStudioApp:
         target_exe = pythonw_exe if os.path.exists(pythonw_exe) else python_exe
         target_script = pyw_entry if os.path.exists(pyw_entry) else py_entry
 
-        shortcut_path = os.path.join(desktop, "CS2 Replay Studio.lnk")
+        shortcut_path = os.path.join(desktop, "CS2 Replay Navigator.lnk")
 
         vbs_script = f'''
 Set oWS = WScript.CreateObject("WScript.Shell")
@@ -1345,7 +1063,7 @@ Set oLink = oWS.CreateShortcut(sLinkFile)
 oLink.TargetPath = "{target_exe}"
 oLink.Arguments = """{target_script}"""
 oLink.WorkingDirectory = "{app_dir}"
-oLink.Description = "Counter-Strike 2 Sub-Tick Replay & Anomaly Studio"
+oLink.Description = "Counter-Strike 2 Replay & Combat Anomaly Navigator"
 oLink.Save
 '''
         try:
@@ -1358,7 +1076,7 @@ oLink.Save
                 os.remove(temp_vbs)
 
             self.log(f"Desktop shortcut created: {shortcut_path}")
-            messagebox.showinfo("Shortcut Created", f"Successfully created Desktop Shortcut!\n\nLocation:\n{shortcut_path}\n\nYou can now launch CS2 Replay Studio directly without .bat files.")
+            messagebox.showinfo("Shortcut Created", f"Successfully created Desktop Shortcut!\n\nLocation:\n{shortcut_path}\n\nYou can now launch CS2 Replay Navigator directly without .bat files.")
         except Exception as e:
             self.log(f"Failed to create desktop shortcut: {e}")
             messagebox.showerror("Shortcut Error", f"Failed to create desktop shortcut:\n{e}")
@@ -1383,9 +1101,9 @@ oLink.Save
                 local_sha = local_info.get("commit_sha", "").strip()
 
                 if local_sha and (remote_sha.startswith(local_sha) or local_sha.startswith(remote_sha_short)):
-                    self.log(f"CS2 Replay Studio is already up to date ({remote_sha_short}: '{commit_msg}').")
+                    self.log(f"CS2 Replay Navigator is already up to date ({remote_sha_short}: '{commit_msg}').")
                     if not silent_if_latest:
-                        messagebox.showinfo("Already Up to Date", f"CS2 Replay Studio is already up to date!\n\nVersion: {remote_sha_short}\nLatest: {commit_msg}")
+                        messagebox.showinfo("Already Up to Date", f"CS2 Replay Navigator is already up to date!\n\nVersion: {remote_sha_short}\nLatest: {commit_msg}")
                     return
 
                 self.log(f"New update available: {local_sha[:7] or 'Unknown'} -> {remote_sha_short} ('{commit_msg}')")
@@ -1412,7 +1130,7 @@ oLink.Save
                             updated_count += 1
 
                 new_version = {
-                    "version": "1.6.0",
+                    "version": "1.7.0",
                     "commit_sha": remote_sha_short,
                     "commit_msg": commit_msg,
                     "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")

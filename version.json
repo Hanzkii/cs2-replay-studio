@@ -1,5 +1,5 @@
 {
-  "version": "1.8.0",
-  "commit_sha": "73afd50",
-  "commit_msg": "feat: 3D spatial raycast combat anomaly engine with demoparser2 integration and headshot aim snap verification"
+  "version": "1.8.1",
+  "commit_sha": "38aa813",
+  "commit_msg": "fix: demoparser fallback diagnostics and install environment compatibility"
 }

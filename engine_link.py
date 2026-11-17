@@ -94,13 +94,13 @@ class CS2NetconClient:
             if self.connected and self.sock:
                 return True
             now = time.time()
-            if now - self.last_attempt_time < 1.5:
+            if now - self.last_attempt_time < 0.8:
                 return self.connected
             self.last_attempt_time = now
 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.6)
+                s.settimeout(0.3)
                 s.connect((self.host, self.port))
                 s.setblocking(False)
                 self.sock = s
@@ -112,7 +112,24 @@ class CS2NetconClient:
                 return False
 
     def is_connected(self) -> bool:
-        return self.connected and self.sock is not None
+        with self._lock:
+            if not self.connected or not self.sock:
+                return False
+            try:
+                # Non-destructive MSG_PEEK to detect if CS2 disconnected
+                data = self.sock.recv(16, socket.MSG_PEEK)
+                if data == b"":
+                    self.connected = False
+                    self.sock = None
+                    return False
+            except (BlockingIOError, socket.timeout):
+                # Normal non-blocking behavior: connection is healthy and waiting
+                pass
+            except Exception:
+                self.connected = False
+                self.sock = None
+                return False
+            return True
 
     def send_command(self, cmd: str) -> bool:
         """Sends raw console command string to CS2 via Netcon."""

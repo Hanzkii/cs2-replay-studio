@@ -396,19 +396,11 @@ class ReplayStudioApp:
                                 relief="flat", padx=4, pady=1, cursor="hand2", command=lambda s=speed: self.set_engine_timescale(s))
             btn_spd.pack(side="left", padx=1)
 
-        # Camera mode selector
+        # Camera mode selector (Default 1st Person)
         tk.Label(bar, text="Cam:", font=("Segoe UI", 8), fg=self.text_muted, bg="#0f172a").pack(side="left", padx=(10, 4))
         btn_cam1 = tk.Button(bar, text="1st Person", font=("Segoe UI", 8), bg="#1e293b", fg=self.text_main, relief="flat", padx=6, pady=1, cursor="hand2",
                              command=lambda: self.set_camera_perspective(1))
         btn_cam1.pack(side="left", padx=2)
-
-        btn_cam2 = tk.Button(bar, text="Chase", font=("Segoe UI", 8), bg="#1e293b", fg=self.text_main, relief="flat", padx=6, pady=1, cursor="hand2",
-                             command=lambda: self.set_camera_perspective(2))
-        btn_cam2.pack(side="left", padx=2)
-
-        btn_cam6 = tk.Button(bar, text="Free Roam", font=("Segoe UI", 8), bg="#1e293b", fg=self.text_main, relief="flat", padx=6, pady=1, cursor="hand2",
-                             command=lambda: self.set_camera_perspective(6))
-        btn_cam6.pack(side="left", padx=2)
 
         # Debug overlays toggle in CS2
         btn_lagcomp = tk.Button(bar, text="Hitboxes [sv_showlagcomp]", font=("Segoe UI", 8), bg="#312e81", fg="#c7d2fe", relief="flat", padx=6, pady=1, cursor="hand2",
@@ -530,8 +522,8 @@ class ReplayStudioApp:
             self.netcon.set_timescale(scale)
             self.log(f"Netcon -> demo_timescale {scale:.2f}")
 
-    def set_camera_perspective(self, mode: int):
-        modes = {1: "First Person", 2: "Chase Cam", 6: "Free Roam"}
+    def set_camera_perspective(self, mode: int = 1):
+        modes = {1: "First Person"}
         if self.netcon.is_connected() or self.netcon.try_connect():
             self.netcon.spec_mode(mode)
             self.log(f"Netcon -> spec_mode {mode} ({modes.get(mode, 'Unknown')})")
@@ -875,19 +867,27 @@ class ReplayStudioApp:
         self.txt_console.see("end")
 
     def _start_engine_poll(self):
-        """Polls Netcon link every 1.5s to maintain live connection status."""
+        """Polls Netcon link every 1.0s to maintain live connection status."""
         def _poll_loop():
             while True:
-                time.sleep(1.5)
+                time.sleep(1.0)
                 try:
                     if not self.root or not self.root.winfo_exists():
                         break
-                    is_conn = self.netcon.is_connected()
-                    if not is_conn and self.cs2_proc and self.cs2_proc.poll() is None:
-                        self.netcon.try_connect()
-                        is_conn = self.netcon.is_connected()
 
-                    status_txt = "● Netcon: Connected (2121)" if is_conn else "○ Netcon: Standby"
+                    # Update port from UI if customized
+                    try:
+                        p = int(self.var_netcon_port.get().strip())
+                        self.netcon.port = p
+                    except Exception:
+                        pass
+
+                    # Poll connection status continuously
+                    if not self.netcon.is_connected():
+                        self.netcon.try_connect()
+
+                    is_conn = self.netcon.is_connected()
+                    status_txt = f"● Netcon: Connected ({self.netcon.port})" if is_conn else "○ Netcon: Standby"
                     status_col = self.accent_emerald if is_conn else self.text_muted
                     self.root.after(0, lambda: self.lbl_netcon_status.config(text=status_txt, fg=status_col))
                 except Exception:

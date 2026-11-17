@@ -1,0 +1,30 @@
+<root>
+    <styles>
+        <include src="s2r://panorama/styles/csgostyles.vcss_c" />
+        <include src="s2r://panorama/styles/subtick_hud.css" />
+    </styles>
+    <scripts>
+        <include src="s2r://panorama/scripts/subtick_hud.js" />
+    </scripts>
+
+    <Panel class="SubTickOverlayRoot" hittest="false">
+        <!-- Sub-Tick Micro-Slice Bar (Docked at y = 96px, below top scoreboard) -->
+        <Panel id="SubTickBarContainer" class="SubTickCard">
+            <Panel class="CardHeader">
+                <Label id="SubTickTitle" class="CardTitle" text="SUB-TICK TIMING // 15.625 ms DISCRETE INTERVAL" />
+                <Label id="SubTickStatus" class="CardBadge" text="✓ MONOTONIC" />
+            </Panel>
+            <Panel id="SubTickTrack" class="Track">
+                <Panel id="SubTickFill" class="Fill" />
+                <Panel id="SubTickNeedle" class="Needle" />
+            </Panel>
+            <Label id="SubTickCallout" class="Callout" text="+attack actuation @ 12.18 ms (w = 0.780)" />
+        </Panel>
+
+        <!-- Anomaly Alert Card (Docked on Right Side at y = 140px) -->
+        <Panel id="AnomalyCard" class="AnomalyAlert">
+            <Label id="AnomalyTitle" class="AnomalyHeader" text="✓ PARITY VERIFIED // ROLLBACK MONOTONIC" />
+            <Label id="AnomalyDesc" class="AnomalyBody" text="sv_maxunlag: 200.0ms | Raycast Delta: 0.46u <= 4.00u" />
+        </Panel>
+    </Panel>
+</root>

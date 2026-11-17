@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
-  "commit_sha": "1fee44c",
-  "commit_msg": "fix(updater): check local commit SHA against remote before updating to avoid redundant downloads"
+  "version": "1.3.0",
+  "commit_sha": "658440a",
+  "commit_msg": "feat(panorama): add native in-engine CS2 Panorama HUD templates and 1-click deployment"
 }

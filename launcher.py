@@ -366,6 +366,18 @@ class ReplayStudioLauncherApp:
         port_entry = tk.Entry(port_row, textvariable=self.var_netcon_port, width=6, bg="#0f172a", fg=self.accent_cyan, insertbackground="#ffffff", font=("Consolas", 9))
         port_entry.pack(side="left", padx=6)
 
+        btn_deploy_panorama = tk.Button(
+            card,
+            text="🎨 Deploy Native Panorama In-Game HUD...",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1e1b4b", fg="#c084fc",
+            activebackground="#2e1065", activeforeground="#ffffff",
+            relief="flat", padx=10, pady=3,
+            cursor="hand2",
+            command=self.deploy_panorama_hud
+        )
+        btn_deploy_panorama.pack(anchor="w", pady=(8, 0))
+
     def _build_overlay_card(self, parent):
         card = tk.LabelFrame(
             parent,
@@ -458,6 +470,31 @@ class ReplayStudioLauncherApp:
                 pass
         else:
             self.log(f"Warning parsing demo: {info.get('error', 'Unknown format')}")
+
+    def deploy_panorama_hud(self):
+        """Deploys native Panorama XML/CSS/JS files directly into game/csgo/panorama/."""
+        if not self.cs2_dir or not os.path.exists(self.cs2_dir):
+            messagebox.showerror("CS2 Not Found", "Cannot deploy Panorama HUD: CS2 game directory not located.")
+            return
+
+        src_dir = os.path.join(self.app_dir, "panorama")
+        target_dir = os.path.join(self.cs2_dir, "panorama")
+
+        if not os.path.exists(src_dir):
+            messagebox.showerror("Error", f"Panorama source files not found at: {src_dir}")
+            return
+
+        try:
+            shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
+            self.log(f"Native Panorama HUD deployed to: {target_dir}")
+            messagebox.showinfo(
+                "Panorama HUD Deployed",
+                f"Successfully deployed native Panorama HUD to:\n\n{target_dir}\n\n"
+                f"When CS2 launches with -insecure, the native in-engine Panorama HUD will load directly!"
+            )
+        except Exception as e:
+            self.log(f"Failed to deploy Panorama HUD: {e}")
+            messagebox.showerror("Deploy Error", f"Failed to copy Panorama assets:\n{e}")
 
     def browse_cs2_exe(self):
         f = filedialog.askopenfilename(

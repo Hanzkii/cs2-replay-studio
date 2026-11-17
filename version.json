@@ -1,5 +1,5 @@
 {
-  "version": "1.7.0",
-  "commit_sha": "45f4a50",
-  "commit_msg": "refactor: remove unrelated sub-tick micro-slice and reverse visualizer tabs; full-height combat navigator"
+  "version": "1.8.0",
+  "commit_sha": "73afd50",
+  "commit_msg": "feat: 3D spatial raycast combat anomaly engine with demoparser2 integration and headshot aim snap verification"
 }

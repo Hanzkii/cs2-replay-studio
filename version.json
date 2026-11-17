@@ -1,5 +1,5 @@
 {
   "version": "1.4.1",
-  "commit_sha": "73d91ae",
+  "commit_sha": "fb7b590",
   "commit_msg": "fix: disable static mock preview, prioritize native Panorama in launcher, and add -dev flag"
 }

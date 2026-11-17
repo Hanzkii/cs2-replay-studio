@@ -15,10 +15,13 @@ Visualizes server-authoritative sub-tick timing micro-slicing ($15.625\text{ ms}
 ## Key Capabilities
 
 - **Zero Pip Dependencies**: Runs entirely on pure Python 3 standard library (`tkinter`, `ctypes`, `socket`, `struct`). No complex build chains or virtual environment setups required.
+- **Independent Windowless Launcher (`launcher.pyw`)**: Start the application directly with zero command prompt or `.bat` windows.
+- **1-Click Built-in Updater**: Built-in `[🔄 Update Tool]` button pulls and applies the latest updates directly from GitHub in-place without needing Git or manual zip re-downloads.
+- **1-Click Desktop Shortcut**: `[📌 Desktop Icon]` generates a native Windows `.lnk` shortcut directly on your desktop.
 - **Non-Invasive & Anticheat Safe**: Employs an external Win32 transparent click-through layered HUD window (`WS_EX_LAYERED | WS_EX_TRANSPARENT`). Zero DLL injection and zero live process memory modification (runs cleanly with CS2 `-insecure`).
 - **Automated Steam & CS2 Discovery**: Automatically scans the Windows Registry and parses `libraryfolders.vdf` across all local drives to locate `cs2.exe` and `game/csgo/` without manual configuration.
 - **Pure Python PBDEMS2 Parser**: Reads protobuf container headers and Google Snappy compression frames directly in Python to inspect map names, build numbers, tickrates, and match metrics.
-- **Real-Time Engine Sync**: Uses CS2's local loopback console socket (`-netconport 2121`) to send transport commands (`demo_pause`, `demo_resume`, `demo_gototick`) and synchronize ticks.
+- **Real-Time Engine Sync**: Uses CS2's local loopback console socket (`-netconport 2121`) to send transport commands (`demo_pause`, `demo_resume`, `demo_gototick`), query live player camera vectors (`getpos_exact`), and synchronize exact playback ticks (`demo_info`).
 
 ---
 

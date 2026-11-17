@@ -157,10 +157,8 @@ class CS2InGameOverlayApp:
         self.view_yaw = 0.0
         self.last_getpos_time = 0.0
 
-        # Active engagement events (event-driven)
+        # Active engagement events (strictly event-driven or F6 tested)
         self.active_engagement: Optional[EngagementEvent] = None
-        self.auto_trigger_interval = 8.0  # Periodic demonstration trigger if idle
-        self.last_auto_trigger = time.time() - 4.0
 
         # Visual Layer Active Toggles
         self.show_subtick_bar = True
@@ -252,30 +250,52 @@ class CS2InGameOverlayApp:
             self.is_transparent_clickthrough = False
 
     def _netcon_worker(self):
-        """Maintains Netcon connection and queries real-time camera position."""
+        """Maintains Netcon connection and queries real-time camera position & demo ticks."""
         while True:
             if not self.netcon.connected:
                 self.netcon.try_connect()
             else:
-                # Query camera position via getpos_exact every 400ms
+                # Query camera position and demo playback information every 350ms
                 now = time.time()
-                if now - self.last_getpos_time > 0.4:
+                if now - self.last_getpos_time > 0.35:
                     self.last_getpos_time = now
-                    self.netcon.send_command("getpos_exact")
-                    time.sleep(0.05)
+                    self.netcon.send_command("getpos_exact; demo_info")
+                    time.sleep(0.04)
                     resp = self.netcon.read_output()
                     if resp:
-                        self._parse_getpos_response(resp)
+                        self._parse_netcon_response(resp)
 
-            time.sleep(0.2)
+            time.sleep(0.15)
 
-    def _parse_getpos_response(self, text: str):
-        m = re.search(r'setpos(?:_exact)?\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+);setang(?:_exact)?\s+([-\d.]+)\s+([-\d.]+)', text)
-        if m:
+    def _parse_netcon_response(self, text: str):
+        # 1. Parse Camera Position and Angles
+        m_cam = re.search(r'setpos(?:_exact)?\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+);setang(?:_exact)?\s+([-\d.]+)\s+([-\d.]+)', text)
+        if m_cam:
             try:
-                self.cam_pos = Vector3(float(m.group(1)), float(m.group(2)), float(m.group(3)))
-                self.view_pitch = float(m.group(4))
-                self.view_yaw = float(m.group(5))
+                self.cam_pos = Vector3(float(m_cam.group(1)), float(m_cam.group(2)), float(m_cam.group(3)))
+                self.view_pitch = float(m_cam.group(4))
+                self.view_yaw = float(m_cam.group(5))
+            except Exception:
+                pass
+
+        # 2. Parse Live CS2 Demo Playback Tick
+        # Matches patterns like: "Playback tick: 27703", "Current tick: 27703", "Tick: 27703", "demo_info: 27703"
+        m_tick = re.search(r'(?:playback\s*tick|current\s*tick|demo\s*tick|tick|frame)[\s:]+(\d+)', text, re.I)
+        if m_tick:
+            try:
+                parsed_tick = int(m_tick.group(1))
+                if parsed_tick > 0:
+                    self.current_tick = parsed_tick
+            except Exception:
+                pass
+
+        # 3. Parse Max / Total Ticks if reported
+        m_total = re.search(r'(?:total\s*ticks|max\s*ticks|of|/)\s*(\d+)', text, re.I)
+        if m_total:
+            try:
+                total_val = int(m_total.group(1))
+                if total_val > 1000:
+                    self.total_demo_ticks = max(self.total_demo_ticks, total_val)
             except Exception:
                 pass
 

@@ -20,6 +20,10 @@ import shutil
 import subprocess
 import threading
 import time
+import io
+import json
+import zipfile
+import urllib.request
 from typing import Optional, Dict, Any
 
 import tkinter as tk
@@ -124,7 +128,40 @@ class ReplayStudioLauncherApp:
             fg=status_col,
             bg="#0d1117"
         )
-        self.lbl_engine_status.pack(side="right")
+        self.lbl_engine_status.pack(side="right", padx=(8, 0))
+
+        # Header utility buttons: Update & Desktop Shortcut
+        self.btn_update = tk.Button(
+            header,
+            text="🔄 Update Tool",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1e293b",
+            fg=self.accent_cyan,
+            activebackground="#334155",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self.check_and_install_updates
+        )
+        self.btn_update.pack(side="right", padx=6)
+
+        self.btn_shortcut = tk.Button(
+            header,
+            text="📌 Desktop Icon",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1e293b",
+            fg=self.accent_emerald,
+            activebackground="#334155",
+            activeforeground="#ffffff",
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self.create_desktop_shortcut
+        )
+        self.btn_shortcut.pack(side="right", padx=6)
 
         # 2. Main Scrollable Container
         main_frame = tk.Frame(self.root, bg=self.bg_dark, padx=16, pady=12)
@@ -503,6 +540,146 @@ class ReplayStudioLauncherApp:
         formatted = f"[{timestamp}] {msg}\n"
         self.txt_console.insert("end", formatted)
         self.txt_console.see("end")
+
+    @staticmethod
+    def _get_desktop_path() -> str:
+        """Finds the true Windows Desktop directory (handling OneDrive redirection)."""
+        if sys.platform == "win32":
+            try:
+                import winreg
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+                )
+                val, _ = winreg.QueryValueEx(key, "Desktop")
+                expanded = os.path.expandvars(val)
+                if os.path.exists(expanded):
+                    return expanded
+            except Exception:
+                pass
+        return os.path.expanduser(r"~\Desktop")
+
+    def create_desktop_shortcut(self):
+        """Creates a native Windows Desktop shortcut pointing to pythonw launcher.pyw."""
+        desktop = self._get_desktop_path()
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        pyw_entry = os.path.join(app_dir, "launcher.pyw")
+        py_entry = os.path.join(app_dir, "launcher.py")
+
+        python_exe = sys.executable
+        pythonw_exe = os.path.join(os.path.dirname(python_exe), "pythonw.exe")
+        target_exe = pythonw_exe if os.path.exists(pythonw_exe) else python_exe
+        target_script = pyw_entry if os.path.exists(pyw_entry) else py_entry
+
+        shortcut_path = os.path.join(desktop, "CS2 Replay Studio.lnk")
+
+        vbs_script = f'''
+Set oWS = WScript.CreateObject("WScript.Shell")
+sLinkFile = "{shortcut_path}"
+Set oLink = oWS.CreateShortcut(sLinkFile)
+oLink.TargetPath = "{target_exe}"
+oLink.Arguments = """{target_script}"""
+oLink.WorkingDirectory = "{app_dir}"
+oLink.Description = "Counter-Strike 2 Sub-Tick Replay Studio // Control Center"
+oLink.Save
+'''
+        try:
+            temp_vbs = os.path.join(app_dir, "_mkshortcut.vbs")
+            with open(temp_vbs, "w", encoding="utf-8") as f:
+                f.write(vbs_script)
+
+            subprocess.run(["cscript", "//nologo", temp_vbs], check=True, creationflags=0x08000000)
+            if os.path.exists(temp_vbs):
+                os.remove(temp_vbs)
+
+            self.log(f"Desktop shortcut created: {shortcut_path}")
+            messagebox.showinfo(
+                "Shortcut Created",
+                f"Successfully created Desktop Shortcut!\n\nLocation:\n{shortcut_path}\n\n"
+                f"You can now launch CS2 Replay Studio directly from your desktop without any .bat files."
+            )
+        except Exception as e:
+            self.log(f"Failed to create desktop shortcut: {e}")
+            messagebox.showerror("Shortcut Error", f"Failed to create desktop shortcut:\n{e}")
+
+    def check_and_install_updates(self, silent_if_latest: bool = False):
+        """Checks GitHub repository for updates and installs them in-place."""
+        def _worker():
+            self.log("Connecting to GitHub to check for updates...")
+            api_url = "https://api.github.com/repos/Hanzkii/cs2-replay-overlay/commits/main"
+            zip_url = "https://github.com/Hanzkii/cs2-replay-overlay/archive/refs/heads/main.zip"
+            headers = {"User-Agent": "CS2-Replay-Studio-Client"}
+
+            try:
+                req = urllib.request.Request(api_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    commit_data = json.loads(resp.read().decode("utf-8"))
+
+                latest_sha = commit_data.get("sha", "")[:7]
+                commit_msg = commit_data.get("commit", {}).get("message", "").split("\n")[0]
+                self.log(f"Latest repository version: {latest_sha} ('{commit_msg}')")
+
+                # Download repository archive
+                self.log("Downloading codebase update archive from GitHub...")
+                req_zip = urllib.request.Request(zip_url, headers=headers)
+                with urllib.request.urlopen(req_zip, timeout=20) as resp:
+                    zip_data = resp.read()
+
+                # Extract over current directory
+                app_dir = os.path.dirname(os.path.abspath(__file__))
+                updated_count = 0
+                with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+                    for name in zf.namelist():
+                        parts = name.split("/", 1)
+                        if len(parts) < 2 or not parts[1]:
+                            continue
+                        rel_file = parts[1]
+                        if rel_file.endswith((".py", ".pyw", ".bat", ".md", ".txt", ".cfg", ".json")):
+                            dest_path = os.path.join(app_dir, rel_file)
+                            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                            with open(dest_path, "wb") as f_out:
+                                f_out.write(zf.read(name))
+                            updated_count += 1
+
+                # Clean cache
+                pycache = os.path.join(app_dir, "__pycache__")
+                if os.path.exists(pycache):
+                    shutil.rmtree(pycache, ignore_errors=True)
+
+                self.log(f"Successfully updated {updated_count} files to commit {latest_sha}!")
+
+                if messagebox.askyesno(
+                    "Update Successful",
+                    f"CS2 Replay Studio has been updated to commit {latest_sha}!\n\n"
+                    f"Changes: {commit_msg}\n\n"
+                    f"Do you want to restart the application now?"
+                ):
+                    self._restart_launcher()
+
+            except Exception as e:
+                self.log(f"Update failed: {e}")
+                if not silent_if_latest:
+                    messagebox.showerror("Update Error", f"Failed to check or apply updates:\n{e}")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _restart_launcher(self):
+        """Restarts the launcher via pythonw or python without batch files."""
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        pyw_entry = os.path.join(app_dir, "launcher.pyw")
+        py_entry = os.path.join(app_dir, "launcher.py")
+
+        python_exe = sys.executable
+        pythonw_exe = os.path.join(os.path.dirname(python_exe), "pythonw.exe")
+        target_exe = pythonw_exe if os.path.exists(pythonw_exe) else python_exe
+        target_script = pyw_entry if os.path.exists(pyw_entry) else py_entry
+
+        try:
+            subprocess.Popen([target_exe, target_script], cwd=app_dir)
+            self.root.destroy()
+            sys.exit(0)
+        except Exception as e:
+            self.log(f"Auto-restart failed: {e}")
 
     def run(self):
         self.root.mainloop()

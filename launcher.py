@@ -73,6 +73,7 @@ class ReplayStudioLauncherApp:
         self.var_anomalies = tk.BooleanVar(value=True)
         self.var_crosshair = tk.BooleanVar(value=True)
         self.var_borderless = tk.BooleanVar(value=True)
+        self.var_launch_external_overlay = tk.BooleanVar(value=False)
         self.var_netcon_port = tk.StringVar(value="2121")
 
         # Discover CS2 initially
@@ -199,7 +200,7 @@ class ReplayStudioLauncherApp:
 
         self.btn_launch_all = tk.Button(
             action_bar,
-            text="▶  LAUNCH REPLAY WITH OVERLAYS",
+            text="▶  LAUNCH REPLAY (NATIVE PANORAMA HUD)",
             font=("Segoe UI", 11, "bold"),
             bg="#059669",
             fg="#ffffff",
@@ -212,6 +213,19 @@ class ReplayStudioLauncherApp:
         )
         self.btn_launch_all.pack(side="left")
 
+        self.chk_ext_overlay = tk.Checkbutton(
+            action_bar,
+            text="Also run external Python overlay",
+            variable=self.var_launch_external_overlay,
+            font=("Segoe UI", 9),
+            bg=self.bg_dark,
+            fg=self.text_muted,
+            selectcolor="#0f172a",
+            activebackground=self.bg_dark,
+            activeforeground="#ffffff"
+        )
+        self.chk_ext_overlay.pack(side="left", padx=12)
+
         self.btn_launch_overlay_only = tk.Button(
             action_bar,
             text="⚙ Overlay Only",
@@ -223,7 +237,7 @@ class ReplayStudioLauncherApp:
             cursor="hand2",
             command=self.launch_overlay_only
         )
-        self.btn_launch_overlay_only.pack(side="left", padx=10)
+        self.btn_launch_overlay_only.pack(side="left", padx=(0, 10))
 
         self.btn_stop = tk.Button(
             action_bar,
@@ -553,11 +567,12 @@ class ReplayStudioLauncherApp:
         with open(cfg_path, "w", encoding="utf-8") as f:
             f.write("sv_cheats 1\ncl_drawhud 1\nr_drawviewmodel 1\necho [REPLAY_STUDIO] In-Engine Panorama HUD Active...\n")
 
-        # 3. Launch CS2 in Borderless Windowed mode
+        # 3. Launch CS2 in Borderless Windowed mode with loose Panorama asset loading
         port = self.var_netcon_port.get().strip() or "2121"
         cs2_cmd = [
             self.cs2_exe,
             "-insecure",
+            "-dev",
             "-novid",
             "-netconport", port,
             "+playdemo", "auto_record_match",
@@ -566,18 +581,21 @@ class ReplayStudioLauncherApp:
         if self.var_borderless.get():
             cs2_cmd.extend(["-windowed", "-noborder"])
 
-        self.log(f"Launching CS2 (+playdemo auto_record_match, netcon {port})...")
+        self.log(f"Launching CS2 (+playdemo auto_record_match, netcon {port}, native Panorama)...")
         try:
             self.cs2_proc = subprocess.Popen(cs2_cmd)
         except Exception as e:
             self.log(f"Failed to launch CS2: {e}")
             return
 
-        # Monitor CS2 process so overlay terminates automatically when game closes
+        # Monitor CS2 process so companion overlay terminates automatically when game closes
         threading.Thread(target=self._monitor_cs2_process, daemon=True).start()
 
-        # 4. Launch Overlay
-        self._start_overlay_process(port)
+        # 4. Launch External Overlay only if explicitly requested
+        if self.var_launch_external_overlay.get():
+            self._start_overlay_process(port)
+        else:
+            self.log("Native in-engine Panorama HUD & Menu active in CS2! (Zero external overlay clutter)")
 
     def launch_overlay_only(self):
         port = self.var_netcon_port.get().strip() or "2121"

@@ -229,7 +229,7 @@ class CS2InGameOverlayApp:
         self.anomalies_per_page = 4
 
         # Visual Mode & Spectator Camera State
-        self.persistent_visuals = True  # Always-On live diagnostics preview by default
+        self.persistent_visuals = False  # Event-Driven by default: only show on discrete combat actions/events
         self.camera_mode = "FIRST_PERSON"  # "FIRST_PERSON", "CHASE_CAM", "FREECAM"
 
         # Visual Layer Active Toggles

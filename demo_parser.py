@@ -24,78 +24,81 @@ def snappy_decompress(data: bytes) -> bytes:
     if not data:
         return b""
 
-    pos = 0
-    uncompressed_len = 0
-    shift = 0
-    while pos < len(data):
-        c = data[pos]
-        pos += 1
-        uncompressed_len |= (c & 0x7F) << shift
-        if (c & 0x80) == 0:
-            break
-        shift += 7
-        if shift >= 35:
-            raise ValueError("Corrupt Snappy VarInt length")
-
-    out = bytearray()
-    while pos < len(data) and len(out) < uncompressed_len:
-        tag = data[pos]
-        pos += 1
-        elem_type = tag & 0x03
-
-        if elem_type == 0:  # Literal
-            lit_len = tag >> 2
-            if lit_len < 60:
-                lit_len += 1
-            elif lit_len == 60:
-                if pos >= len(data): break
-                lit_len = data[pos] + 1
-                pos += 1
-            elif lit_len == 61:
-                if pos + 2 > len(data): break
-                lit_len = data[pos] | (data[pos + 1] << 8) + 1
-                pos += 2
-            elif lit_len == 62:
-                if pos + 3 > len(data): break
-                lit_len = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) + 1
-                pos += 3
-            elif lit_len == 63:
-                if pos + 4 > len(data): break
-                lit_len = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24) + 1
-                pos += 4
-
-            if pos + lit_len > len(data): break
-            out.extend(data[pos:pos + lit_len])
-            pos += lit_len
-
-        elif elem_type == 1:  # Copy with 1-byte offset
-            copy_len = ((tag >> 2) & 0x07) + 4
-            if pos >= len(data): break
-            offset = ((tag >> 5) << 8) | data[pos]
+    try:
+        pos = 0
+        uncompressed_len = 0
+        shift = 0
+        while pos < len(data):
+            c = data[pos]
             pos += 1
-            if offset == 0 or offset > len(out): break
-            for _ in range(copy_len):
-                out.append(out[-offset])
+            uncompressed_len |= (c & 0x7F) << shift
+            if (c & 0x80) == 0:
+                break
+            shift += 7
+            if shift >= 35:
+                return data
 
-        elif elem_type == 2:  # Copy with 2-byte offset
-            copy_len = (tag >> 2) + 1
-            if pos + 2 > len(data): break
-            offset = data[pos] | (data[pos + 1] << 8)
-            pos += 2
-            if offset == 0 or offset > len(out): break
-            for _ in range(copy_len):
-                out.append(out[-offset])
+        out = bytearray()
+        while pos < len(data) and len(out) < uncompressed_len:
+            tag = data[pos]
+            pos += 1
+            elem_type = tag & 0x03
 
-        elif elem_type == 3:  # Copy with 4-byte offset
-            copy_len = (tag >> 2) + 1
-            if pos + 4 > len(data): break
-            offset = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24)
-            pos += 4
-            if offset == 0 or offset > len(out): break
-            for _ in range(copy_len):
-                out.append(out[-offset])
+            if elem_type == 0:  # Literal
+                lit_len = tag >> 2
+                if lit_len < 60:
+                    lit_len += 1
+                elif lit_len == 60:
+                    if pos >= len(data): break
+                    lit_len = data[pos] + 1
+                    pos += 1
+                elif lit_len == 61:
+                    if pos + 2 > len(data): break
+                    lit_len = data[pos] | (data[pos + 1] << 8) + 1
+                    pos += 2
+                elif lit_len == 62:
+                    if pos + 3 > len(data): break
+                    lit_len = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) + 1
+                    pos += 3
+                elif lit_len == 63:
+                    if pos + 4 > len(data): break
+                    lit_len = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24) + 1
+                    pos += 4
 
-    return bytes(out)
+                if pos + lit_len > len(data): break
+                out.extend(data[pos:pos + lit_len])
+                pos += lit_len
+
+            elif elem_type == 1:  # Copy with 1-byte offset
+                copy_len = ((tag >> 2) & 0x07) + 4
+                if pos >= len(data): break
+                offset = ((tag >> 5) << 8) | data[pos]
+                pos += 1
+                if offset == 0 or offset > len(out): break
+                for _ in range(copy_len):
+                    out.append(out[-offset])
+
+            elif elem_type == 2:  # Copy with 2-byte offset
+                copy_len = (tag >> 2) + 1
+                if pos + 2 > len(data): break
+                offset = data[pos] | (data[pos + 1] << 8)
+                pos += 2
+                if offset == 0 or offset > len(out): break
+                for _ in range(copy_len):
+                    out.append(out[-offset])
+
+            elif elem_type == 3:  # Copy with 4-byte offset
+                copy_len = (tag >> 2) + 1
+                if pos + 4 > len(data): break
+                offset = data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24)
+                pos += 4
+                if offset == 0 or offset > len(out): break
+                for _ in range(copy_len):
+                    out.append(out[-offset])
+
+        return bytes(out)
+    except Exception:
+        return data
 
 
 class BinaryReader:
@@ -187,52 +190,59 @@ class CS2DemoSummary:
         if magic.startswith(b"PBDEMS2"):
             info["valid"] = True
             info["magic"] = "PBDEMS2 (Source 2 Wire Protocol)"
-            if reader.remaining() >= 4:
-                cur = reader.data[reader.pos]
-                if cur not in (1, 0x41):
-                    reader.read_u32_le()  # Summary offset
+
+            # Detect first command frame offset (PBDEMS2 has 64-bit/32-bit summary offset)
+            start_pos = 8
+            for candidate in (16, 12, 8):
+                if candidate < len(header_chunk) and header_chunk[candidate] in (1, 2, 0x41, 0x42):
+                    start_pos = candidate
+                    break
+            reader.pos = start_pos
 
             # Parse frames in initial chunk
-            while reader.has_more():
-                cmd_raw = reader.read_varint()
-                if cmd_raw == 0: break
+            try:
+                while reader.has_more():
+                    cmd_raw = reader.read_varint()
+                    if cmd_raw == 0: break
 
-                is_compressed = bool(cmd_raw & 0x40)
-                cmd = cmd_raw & ~0x40
+                    is_compressed = bool(cmd_raw & 0x40)
+                    cmd = cmd_raw & ~0x40
 
-                tick = reader.read_varint()
-                size = reader.read_varint()
-                if size <= 0 or size > reader.remaining():
-                    break
-                raw_payload = reader.read_bytes(size)
+                    tick = reader.read_varint()
+                    size = reader.read_varint()
+                    if size <= 0 or size > reader.remaining():
+                        break
+                    raw_payload = reader.read_bytes(size)
 
-                payload = snappy_decompress(raw_payload) if is_compressed else raw_payload
+                    payload = snappy_decompress(raw_payload) if is_compressed else raw_payload
 
-                # DEM_FileHeader (cmd 1 or 2)
-                if cmd in (1, 2):
-                    pb = BinaryReader(payload)
-                    while pb.has_more():
-                        tag = pb.read_varint()
-                        fnum = tag >> 3
-                        wtype = tag & 7
-                        if fnum == 3 and wtype == 2:
-                            n = pb.read_varint()
-                            info["server_name"] = pb.read_bytes(n).decode("utf-8", "ignore")
-                        elif fnum == 4 and wtype == 2:
-                            n = pb.read_varint()
-                            info["client_name"] = pb.read_bytes(n).decode("utf-8", "ignore")
-                        elif fnum == 5 and wtype == 2:
-                            n = pb.read_varint()
-                            info["map_name"] = pb.read_bytes(n).decode("utf-8", "ignore")
-                        elif fnum == 13 and wtype == 0:
-                            info["build_num"] = str(pb.read_varint())
-                        elif fnum in (7, 16) and wtype == 0:
-                            info["network_protocol"] = pb.read_varint()
-                        elif fnum == 17 and wtype == 5:
-                            info["server_tickrate"] = round(pb.read_f32_le(), 1)
-                        else:
-                            pb.skip_field(wtype)
-                    break
+                    # DEM_FileHeader (cmd 1 or 2)
+                    if cmd in (1, 2):
+                        pb = BinaryReader(payload)
+                        while pb.has_more():
+                            tag = pb.read_varint()
+                            fnum = tag >> 3
+                            wtype = tag & 7
+                            if fnum == 3 and wtype == 2:
+                                n = pb.read_varint()
+                                info["server_name"] = pb.read_bytes(n).decode("utf-8", "ignore")
+                            elif fnum == 4 and wtype == 2:
+                                n = pb.read_varint()
+                                info["client_name"] = pb.read_bytes(n).decode("utf-8", "ignore")
+                            elif fnum == 5 and wtype == 2:
+                                n = pb.read_varint()
+                                info["map_name"] = pb.read_bytes(n).decode("utf-8", "ignore")
+                            elif fnum == 13 and wtype == 0:
+                                info["build_num"] = str(pb.read_varint())
+                            elif fnum in (7, 16) and wtype == 0:
+                                info["network_protocol"] = pb.read_varint()
+                            elif fnum == 17 and wtype == 5:
+                                info["server_tickrate"] = round(pb.read_f32_le(), 1)
+                            else:
+                                pb.skip_field(wtype)
+                        break
+            except Exception as e:
+                pass
 
             # Estimate duration based on file size and 64 tickrate
             est_seconds = int((info["file_size_mb"] * 1024 * 1024) / (64.0 * 180.0))

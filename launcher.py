@@ -471,30 +471,34 @@ class ReplayStudioLauncherApp:
         else:
             self.log(f"Warning parsing demo: {info.get('error', 'Unknown format')}")
 
-    def deploy_panorama_hud(self):
+    def deploy_panorama_hud(self, silent: bool = False):
         """Deploys native Panorama XML/CSS/JS files directly into game/csgo/panorama/."""
         if not self.cs2_dir or not os.path.exists(self.cs2_dir):
-            messagebox.showerror("CS2 Not Found", "Cannot deploy Panorama HUD: CS2 game directory not located.")
+            if not silent:
+                messagebox.showerror("CS2 Not Found", "Cannot deploy Panorama HUD: CS2 game directory not located.")
             return
 
         src_dir = os.path.join(self.app_dir, "panorama")
         target_dir = os.path.join(self.cs2_dir, "panorama")
 
         if not os.path.exists(src_dir):
-            messagebox.showerror("Error", f"Panorama source files not found at: {src_dir}")
+            if not silent:
+                messagebox.showerror("Error", f"Panorama source files not found at: {src_dir}")
             return
 
         try:
             shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
-            self.log(f"Native Panorama HUD deployed to: {target_dir}")
-            messagebox.showinfo(
-                "Panorama HUD Deployed",
-                f"Successfully deployed native Panorama HUD to:\n\n{target_dir}\n\n"
-                f"When CS2 launches with -insecure, the native in-engine Panorama HUD will load directly!"
-            )
+            self.log(f"Native Panorama HUD & Menu deployed to: {target_dir}")
+            if not silent:
+                messagebox.showinfo(
+                    "Panorama HUD Deployed",
+                    f"Successfully deployed native Panorama in-engine HUD & Menu to:\n\n{target_dir}\n\n"
+                    f"When CS2 launches with -insecure, the native in-engine Panorama HUD and settings will load directly with authentic 1:1 CS2 visuals!"
+                )
         except Exception as e:
             self.log(f"Failed to deploy Panorama HUD: {e}")
-            messagebox.showerror("Deploy Error", f"Failed to copy Panorama assets:\n{e}")
+            if not silent:
+                messagebox.showerror("Deploy Error", f"Failed to copy Panorama assets:\n{e}")
 
     def browse_cs2_exe(self):
         f = filedialog.askopenfilename(
@@ -519,6 +523,16 @@ class ReplayStudioLauncherApp:
 
         threading.Thread(target=self._launch_worker, daemon=True).start()
 
+    def _monitor_cs2_process(self):
+        """Watches CS2 process lifecycle and terminates companion overlay immediately upon game exit."""
+        if self.cs2_proc:
+            try:
+                self.cs2_proc.wait()
+                self.log("Counter-Strike 2 closed. Terminating companion overlay...")
+                self.stop_all()
+            except Exception:
+                pass
+
     def _launch_worker(self):
         self.log("Preparing replay playback session...")
 
@@ -530,11 +544,14 @@ class ReplayStudioLauncherApp:
         except Exception as e:
             self.log(f"Note staging demo: {e}")
 
+        # Automatically deploy native Panorama HUD & Menu into game/csgo/panorama/
+        self.deploy_panorama_hud(silent=True)
+
         # 2. Deploy auto-exec CFG
         cfg_path = os.path.join(self.cs2_dir, "cfg", "cs2_auto_record.cfg")
         os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
         with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write("sv_cheats 1\ncl_drawhud 1\nr_drawviewmodel 1\necho [REPLAY_STUDIO] Engine hook ready...\n")
+            f.write("sv_cheats 1\ncl_drawhud 1\nr_drawviewmodel 1\necho [REPLAY_STUDIO] In-Engine Panorama HUD Active...\n")
 
         # 3. Launch CS2 in Borderless Windowed mode
         port = self.var_netcon_port.get().strip() or "2121"
@@ -555,6 +572,9 @@ class ReplayStudioLauncherApp:
         except Exception as e:
             self.log(f"Failed to launch CS2: {e}")
             return
+
+        # Monitor CS2 process so overlay terminates automatically when game closes
+        threading.Thread(target=self._monitor_cs2_process, daemon=True).start()
 
         # 4. Launch Overlay
         self._start_overlay_process(port)

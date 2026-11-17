@@ -1,30 +1,192 @@
 <root>
     <styles>
         <include src="s2r://panorama/styles/csgostyles.vcss_c" />
-        <include src="s2r://panorama/styles/subtick_hud.css" />
+        <include src="file://{resources}/styles/subtick_hud.css" />
     </styles>
     <scripts>
-        <include src="s2r://panorama/scripts/subtick_hud.js" />
+        <include src="file://{resources}/scripts/subtick_hud.js" />
     </scripts>
 
     <Panel class="SubTickOverlayRoot" hittest="false">
-        <!-- Sub-Tick Micro-Slice Bar (Docked at y = 96px, below top scoreboard) -->
-        <Panel id="SubTickBarContainer" class="SubTickCard">
-            <Panel class="CardHeader">
+        <!-- ========================================================= -->
+        <!-- LAYER 1: Top Sub-Tick Micro-Slice Bar                     -->
+        <!-- ========================================================= -->
+        <Panel id="SubTickBarContainer" class="SubTickCard" hittest="false">
+            <Panel class="CardHeader" hittest="false">
                 <Label id="SubTickTitle" class="CardTitle" text="SUB-TICK TIMING // 15.625 ms DISCRETE INTERVAL" />
                 <Label id="SubTickStatus" class="CardBadge" text="✓ MONOTONIC" />
             </Panel>
-            <Panel id="SubTickTrack" class="Track">
+            <Panel id="SubTickTrack" class="Track" hittest="false">
                 <Panel id="SubTickFill" class="Fill" />
                 <Panel id="SubTickNeedle" class="Needle" />
             </Panel>
-            <Label id="SubTickCallout" class="Callout" text="+attack actuation @ 12.18 ms (w = 0.780)" />
+            <Panel class="CardFooter" hittest="false">
+                <Label id="SubTickCallout" class="Callout" text="Waiting for weapon actuation..." />
+                <Label id="SubTickWindow" class="WindowCallout" text="[15.625 ms window | 64.0 Hz]" />
+            </Panel>
         </Panel>
 
-        <!-- Anomaly Alert Card (Docked on Right Side at y = 140px) -->
-        <Panel id="AnomalyCard" class="AnomalyAlert">
-            <Label id="AnomalyTitle" class="AnomalyHeader" text="✓ PARITY VERIFIED // ROLLBACK MONOTONIC" />
+        <!-- ========================================================= -->
+        <!-- LAYER 2: 3D Rewound Hitbox & Ray-Trace Spatial Overlay    -->
+        <!-- ========================================================= -->
+        <Panel id="SpatialHitboxGuide" class="SpatialGuideCard" hittest="false">
+            <Panel class="SpatialReticleContainer" hittest="false">
+                <Panel class="SpatialReticleRing" />
+                <Panel class="SpatialReticleDot" />
+            </Panel>
+            <Panel class="SpatialLabels" hittest="false">
+                <Label id="SpatialTitle" class="SpatialTitleText" text="REWOUND HITBOX [Apex Joint #6]" />
+                <Label id="SpatialDesc" class="SpatialDescText" text="t_rewind: -47.6ms | sv_maxunlag: 200.0ms" />
+            </Panel>
+        </Panel>
+
+        <!-- ========================================================= -->
+        <!-- LAYER 4: Anomaly Alert Card (Docked on Right Side)        -->
+        <!-- ========================================================= -->
+        <Panel id="AnomalyCard" class="AnomalyAlert" hittest="false">
+            <Label id="AnomalyTitle" class="AnomalyHeader" text="✓ KINEMATIC INTEGRITY // PARITY CONFIRMED" />
             <Label id="AnomalyDesc" class="AnomalyBody" text="sv_maxunlag: 200.0ms | Raycast Delta: 0.46u <= 4.00u" />
+        </Panel>
+
+        <!-- ========================================================= -->
+        <!-- Top-Right Settings Pill Button (Click to Open Menu)       -->
+        <!-- ========================================================= -->
+        <Button id="SettingsButtonPill" class="SettingsPill" onactivate="ToggleSettingsMenu()">
+            <Label id="SettingsButtonLabel" class="SettingsPillText" text="⚙ REPLAY SETTINGS [F1]" />
+        </Button>
+
+        <!-- ========================================================= -->
+        <!-- LAYER 5: Interactive Settings & Anomaly Navigator Modal   -->
+        <!-- ========================================================= -->
+        <Panel id="SettingsModal" class="SettingsModal hidden" hittest="true">
+            <!-- Modal Header -->
+            <Panel class="ModalHeader">
+                <Label class="ModalTitle" text="⚙ REPLAY STUDIO // IN-ENGINE SETTINGS & ANOMALIES" />
+                <Button class="ModalCloseBtn" onactivate="ToggleSettingsMenu()">
+                    <Label class="ModalCloseText" text="✕ [F1]" />
+                </Button>
+            </Panel>
+
+            <Panel class="ModalBody">
+                <!-- Section 1: Visual Overlay Layers Checkboxes -->
+                <Label class="SectionTitle" text="VISUAL OVERLAY LAYERS" />
+                <Panel class="CheckboxGrid">
+                    <Panel class="CheckboxItem">
+                        <ToggleButton id="ChkSubtickBar" class="PanoramaCheckbox" checked="true" onactivate="OnToggleLayer('subtick')">
+                            <Label class="CheckboxLabel" text="Layer 1: Sub-Tick Micro-Slice Bar" />
+                        </ToggleButton>
+                    </Panel>
+                    <Panel class="CheckboxItem">
+                        <ToggleButton id="ChkHitbox" class="PanoramaCheckbox" checked="true" onactivate="OnToggleLayer('hitbox')">
+                            <Label class="CheckboxLabel" text="Layer 2: 3D Rewound Hitbox (Apex #6)" />
+                        </ToggleButton>
+                    </Panel>
+                    <Panel class="CheckboxItem">
+                        <ToggleButton id="ChkRaytrace" class="PanoramaCheckbox" checked="true" onactivate="OnToggleLayer('raytrace')">
+                            <Label class="CheckboxLabel" text="Layer 3: Bullet Ray-Trace Trajectory" />
+                        </ToggleButton>
+                    </Panel>
+                    <Panel class="CheckboxItem">
+                        <ToggleButton id="ChkAnomalies" class="PanoramaCheckbox" checked="true" onactivate="OnToggleLayer('anomalies')">
+                            <Label class="CheckboxLabel" text="Layer 4: Desync & Rollback Alerts" />
+                        </ToggleButton>
+                    </Panel>
+                </Panel>
+
+                <!-- Section 2: Mode Selectors -->
+                <Panel class="ModesRow">
+                    <Button id="BtnCamMode" class="ModeBtn" onactivate="OnCycleCamMode()">
+                        <Label id="LblCamMode" class="BtnText" text="Cam Mode [F8]: FIRST_PERSON" />
+                    </Button>
+                    <Button id="BtnLiveMode" class="ModeBtn" onactivate="OnToggleLiveMode()">
+                        <Label id="LblLiveMode" class="BtnText" text="Live HUD [F7]: Always-On" />
+                    </Button>
+                </Panel>
+
+                <!-- Section 3: Test Shot Action -->
+                <Button id="BtnTestShot" class="ActionBtn" onactivate="OnTriggerTestShot()">
+                    <Label class="BtnTextBold" text="⚡ TRIGGER SUB-TICK TEST SHOT & AUDIT (F6)" />
+                </Button>
+
+                <Panel class="Divider" />
+
+                <!-- Section 4: Detected Actions & Anomaly Timeline -->
+                <Panel class="AnomalyHeaderRow">
+                    <Label id="LblAnomalyCount" class="SectionTitle" text="🔍 DETECTED ACTIONS & COMBAT ANOMALIES" />
+                    <Panel class="PaginationControls">
+                        <Label id="LblAnomalyPage" class="PageLabel" text="Page 1/3" />
+                        <Button class="PageBtn" onactivate="OnAnomalyPagePrev()">
+                            <Label class="BtnText" text="◀" />
+                        </Button>
+                        <Button class="PageBtn" onactivate="OnAnomalyPageNext()">
+                            <Label class="BtnText" text="▶" />
+                        </Button>
+                    </Panel>
+                </Panel>
+
+                <!-- Anomaly Event List Container -->
+                <Panel id="AnomalyListContainer" class="AnomalyList">
+                    <!-- Event Row 1 -->
+                    <Panel class="AnomalyRow">
+                        <Button class="JumpBtn" onactivate="OnJumpAnomaly(23040)">
+                            <Label class="JumpBtnText" text="▶ GO" />
+                        </Button>
+                        <Label class="AnomalyRowDesc" text="Tick 023040 (06:00) - xf [M4A1-S]  w=0.650 -50.0ms" />
+                        <Label class="AnomalyRowBadge Miss" text="[MISS]" />
+                    </Panel>
+                    <!-- Event Row 2 -->
+                    <Panel class="AnomalyRow">
+                        <Button class="JumpBtn" onactivate="OnJumpAnomaly(23404)">
+                            <Label class="JumpBtnText" text="▶ GO" />
+                        </Button>
+                        <Label class="AnomalyRowDesc" text="Tick 023404 (06:05) - seraph [AK-47]  w=0.870 -56.0ms" />
+                        <Label class="AnomalyRowBadge Hit" text="[HIT]" />
+                    </Panel>
+                    <!-- Event Row 3 -->
+                    <Panel class="AnomalyRow">
+                        <Button class="JumpBtn" onactivate="OnJumpAnomaly(82357)">
+                            <Label class="JumpBtnText" text="▶ GO" />
+                        </Button>
+                        <Label class="AnomalyRowDesc" text="Tick 082357 (21:20) - baselineJ [desert eagle]  w=0.720 -32.0ms" />
+                        <Label class="AnomalyRowBadge Hit" text="[HIT]" />
+                    </Panel>
+                    <!-- Event Row 4 -->
+                    <Panel class="AnomalyRow">
+                        <Button class="JumpBtn" onactivate="OnJumpAnomaly(110620)">
+                            <Label class="JumpBtnText" text="▶ GO" />
+                        </Button>
+                        <Label class="AnomalyRowDesc" text="Tick 110620 (28:48) - Apex [AWP]  w=0.910 -77.0ms" />
+                        <Label class="AnomalyRowBadge Hit" text="[HIT]" />
+                    </Panel>
+                </Panel>
+
+                <Panel class="Divider" />
+
+                <!-- Section 5: Demo Playback Transport Controls -->
+                <Label class="SectionTitle" text="DEMO PLAYBACK TRANSPORT CONTROLS" />
+                <Panel class="TransportRow">
+                    <Button class="TransportBtn" onactivate="OnSeekRelative(-64)">
+                        <Label class="BtnText" text="◀◀ -64 Ticks" />
+                    </Button>
+                    <Button id="BtnPlayPause" class="TransportBtnPrimary" onactivate="OnTogglePlayPause()">
+                        <Label id="LblPlayPause" class="BtnTextBold" text="❚❚ PAUSE / PLAY" />
+                    </Button>
+                    <Button class="TransportBtn" onactivate="OnSeekRelative(64)">
+                        <Label class="BtnText" text="+64 Ticks ▶▶" />
+                    </Button>
+                </Panel>
+
+                <!-- Section 6: Timeline Scrubber Slider -->
+                <Panel class="ScrubberContainer">
+                    <Label id="LblScrubberTick" class="ScrubberLabel" text="Timeline Scrub: Tick 0 / 150000" />
+                    <Slider id="DemoTimelineSlider" class="ScrubberSlider" min="0" max="150000" value="0" onvaluechanged="OnScrubberChanged()" />
+                </Panel>
+
+                <!-- Section 7: Return & Lock Button -->
+                <Button class="ReturnBtn" onactivate="ToggleSettingsMenu()">
+                    <Label class="ReturnBtnText" text="✓ RETURN TO GAME & LOCK (F1)" />
+                </Button>
+            </Panel>
         </Panel>
     </Panel>
 </root>

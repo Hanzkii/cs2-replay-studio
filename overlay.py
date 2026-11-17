@@ -249,6 +249,8 @@ class CS2InGameOverlayApp:
         self.top_hwnd: Optional[int] = None
         self.master_visible = True
         self.is_window_showing = False
+        self.cs2_ever_detected = False
+        self.cs2_missing_frames = 0
 
         # Previous hotkey states
         self.prev_f1 = False
@@ -539,22 +541,43 @@ class CS2InGameOverlayApp:
                 self.is_window_showing = False
             return False
 
-        x, y, w, h = get_cs2_window_rect()
-        if not self.is_window_showing:
-            self.root.deiconify()
-            self._set_clickthrough(not self.menu_open)
-            self.is_window_showing = True
+        hwnd = get_cs2_hwnd()
+        if hwnd and user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd):
+            self.cs2_ever_detected = True
+            self.cs2_missing_frames = 0
+            rect = RECT()
+            if user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                pt = POINT(rect.left, rect.top)
+                user32.ClientToScreen(hwnd, ctypes.byref(pt))
+                w = rect.right - rect.left
+                h = rect.bottom - rect.top
+                if w > 300 and h > 200:
+                    if not self.is_window_showing:
+                        self.root.deiconify()
+                        self._set_clickthrough(not self.menu_open)
+                        self.is_window_showing = True
 
-        if (w != self.screen_w or h != self.screen_h or x != self.win_x or y != self.win_y):
-            self.screen_w = w
-            self.screen_h = h
-            self.win_x = x
-            self.win_y = y
-            self.root.geometry(f"{w}x{h}+{x}+{y}")
-            self.canvas.config(width=w, height=h)
-            self._set_clickthrough(not self.menu_open)
-
-        return True
+                    if (w != self.screen_w or h != self.screen_h or pt.x != self.win_x or pt.y != self.win_y):
+                        self.screen_w = w
+                        self.screen_h = h
+                        self.win_x = pt.x
+                        self.win_y = pt.y
+                        self.root.geometry(f"{w}x{h}+{pt.x}+{pt.y}")
+                        self.canvas.config(width=w, height=h)
+                        self._set_clickthrough(not self.menu_open)
+                    return True
+        else:
+            # CS2 window is closed or not found
+            if self.cs2_ever_detected:
+                self.cs2_missing_frames += 1
+                # If CS2 was running and has exited for > 40 frames (~0.65s), exit overlay immediately!
+                if self.cs2_missing_frames > 40:
+                    try:
+                        self.root.destroy()
+                    except Exception:
+                        pass
+                    sys.exit(0)
+            return False
 
     def _main_loop(self):
         now = time.time()

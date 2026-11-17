@@ -64,16 +64,9 @@ class ReplayStudioLauncherApp:
         self.cs2_dir: Optional[str] = None
 
         self.cs2_proc: Optional[subprocess.Popen] = None
-        self.overlay_proc: Optional[subprocess.Popen] = None
 
-        # Checkbox states
-        self.var_subtick = tk.BooleanVar(value=True)
-        self.var_hitbox = tk.BooleanVar(value=True)
-        self.var_raytrace = tk.BooleanVar(value=True)
-        self.var_anomalies = tk.BooleanVar(value=True)
-        self.var_crosshair = tk.BooleanVar(value=True)
+        # Configuration state
         self.var_borderless = tk.BooleanVar(value=True)
-        self.var_launch_external_overlay = tk.BooleanVar(value=False)
         self.var_netcon_port = tk.StringVar(value="2121")
 
         # Discover CS2 initially
@@ -190,8 +183,8 @@ class ReplayStudioLauncherApp:
         self._build_demo_card(col_left)
         self._build_cs2_card(col_left)
 
-        # --- RIGHT COLUMN: Overlay Config & Hotkeys ---
-        self._build_overlay_card(col_right)
+        # --- RIGHT COLUMN: Panorama Suite & Hotkeys ---
+        self._build_panorama_card(col_right)
         self._build_hotkey_card(col_right)
 
         # 3. Bottom Execution Bar
@@ -207,37 +200,11 @@ class ReplayStudioLauncherApp:
             activebackground="#10b981",
             activeforeground="#ffffff",
             relief="flat",
-            padx=20, pady=8,
+            padx=24, pady=8,
             cursor="hand2",
             command=self.launch_full_replay
         )
         self.btn_launch_all.pack(side="left")
-
-        self.chk_ext_overlay = tk.Checkbutton(
-            action_bar,
-            text="Also run external Python overlay",
-            variable=self.var_launch_external_overlay,
-            font=("Segoe UI", 9),
-            bg=self.bg_dark,
-            fg=self.text_muted,
-            selectcolor="#0f172a",
-            activebackground=self.bg_dark,
-            activeforeground="#ffffff"
-        )
-        self.chk_ext_overlay.pack(side="left", padx=12)
-
-        self.btn_launch_overlay_only = tk.Button(
-            action_bar,
-            text="⚙ Overlay Only",
-            font=("Segoe UI", 9, "bold"),
-            bg="#1e293b",
-            fg="#e2e8f0",
-            relief="flat",
-            padx=14, pady=8,
-            cursor="hand2",
-            command=self.launch_overlay_only
-        )
-        self.btn_launch_overlay_only.pack(side="left", padx=(0, 10))
 
         self.btn_stop = tk.Button(
             action_bar,
@@ -246,11 +213,11 @@ class ReplayStudioLauncherApp:
             bg="#450a0a",
             fg="#fca5a5",
             relief="flat",
-            padx=14, pady=8,
+            padx=16, pady=8,
             cursor="hand2",
             command=self.stop_all
         )
-        self.btn_stop.pack(side="left")
+        self.btn_stop.pack(side="left", padx=14)
 
         # 4. Embedded Live Diagnostics Console
         console_frame = tk.Frame(self.root, bg="#030712", padx=12, pady=6)
@@ -392,10 +359,10 @@ class ReplayStudioLauncherApp:
         )
         btn_deploy_panorama.pack(anchor="w", pady=(8, 0))
 
-    def _build_overlay_card(self, parent):
+    def _build_panorama_card(self, parent):
         card = tk.LabelFrame(
             parent,
-            text=" 3. IN-GAME VISUAL OVERLAY LAYERS ",
+            text=" 3. NATIVE IN-ENGINE PANORAMA SUITE ",
             font=("Consolas", 9, "bold"),
             bg=self.card_bg,
             fg=self.accent_cyan,
@@ -404,29 +371,49 @@ class ReplayStudioLauncherApp:
         )
         card.pack(fill="x", pady=(0, 12))
 
-        options = [
-            ("Layer 1: Sub-Tick Micro-Slice Bar (15.625 ms discrete window)", self.var_subtick),
-            ("Layer 2: 3D Rewound Lag Comp Hitbox (Apex Joint #6)", self.var_hitbox),
-            ("Layer 3: Bullet Ray-Trace & Trajectory Vector", self.var_raytrace),
-            ("Layer 4: Desync & Rollback Anomaly Alerts", self.var_anomalies),
-            ("First-Person Crosshair Guide Reticle", self.var_crosshair),
+        lbl_desc = tk.Label(
+            card,
+            text="Renders natively inside Counter-Strike 2 engine with 1:1 authentic styling.\nZero external window capture, zero mouse lock, zero desktop clutter.",
+            font=("Segoe UI", 9),
+            fg=self.accent_emerald,
+            bg=self.card_bg,
+            justify="left"
+        )
+        lbl_desc.pack(anchor="w", pady=(0, 8))
+
+        features = [
+            "✔ Layer 1: Sub-Tick Micro-Slice Bar (15.625 ms discrete window)",
+            "✔ Layer 2: 3D Rewound Hitbox Spatial Reticle (Apex Joint #6)",
+            "✔ Layer 3: Bullet Ray-Trace & Trajectory Vector Guide",
+            "✔ Layer 4: Desync & Rollback Anomaly Alerts",
+            "✔ Layer 5: In-Engine Settings & Anomaly Navigator Modal ([F1])"
         ]
 
-        for text, var in options:
-            chk = tk.Checkbutton(
+        for text in features:
+            tk.Label(
                 card,
                 text=text,
-                variable=var,
                 font=("Segoe UI", 9),
-                bg=self.card_bg, fg=self.text_main,
-                selectcolor="#0f172a", activebackground=self.card_bg, activeforeground=self.text_main
-            )
-            chk.pack(anchor="w", pady=2)
+                fg=self.text_main,
+                bg=self.card_bg
+            ).pack(anchor="w", pady=1.5)
+
+        btn_deploy = tk.Button(
+            card,
+            text="🎨 Deploy / Sync Panorama Assets to CS2",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1e1b4b", fg="#c084fc",
+            activebackground="#2e1065", activeforeground="#ffffff",
+            relief="flat", padx=10, pady=4,
+            cursor="hand2",
+            command=self.deploy_panorama_hud
+        )
+        btn_deploy.pack(anchor="w", pady=(10, 0))
 
     def _build_hotkey_card(self, parent):
         card = tk.LabelFrame(
             parent,
-            text=" 4. IN-GAME HOTKEY CONTROLS ",
+            text=" 4. IN-GAME REPLAY CONTROLS ",
             font=("Consolas", 9, "bold"),
             bg=self.card_bg,
             fg=self.accent_cyan,
@@ -436,20 +423,19 @@ class ReplayStudioLauncherApp:
         card.pack(fill="x")
 
         hotkeys = [
-            ("[F1] / [INSERT]", "Toggle Settings & Anomaly Navigator (Unlocks mouse)"),
+            ("[F1]", "Toggle In-Engine Settings & Anomaly Modal (Interactive mouse)"),
             ("[SPACE]", "Play / Pause CS2 demo playback"),
             ("[←] / [→]", "Seek ±64 Ticks (±1.0 second scrub)"),
-            ("[F6]", "Trigger Test Shot & Sub-Tick Audit"),
+            ("[F6]", "Trigger Sub-Tick Test Shot & Parity Audit"),
             ("[F7]", "Toggle Live Always-On HUD vs Event-Only"),
             ("[F8]", "Cycle Cam Perspective (1st Person / Chase / Freecam)"),
-            ("[F2] - [F5]", "Quick toggle Hitbox / Sub-Tick / Rays / Alerts"),
-            ("[F11] / [F10]", "Emergency Master Hide / Reveal Overlay"),
+            ("[ESC]", "Close in-engine modal and return focus to game"),
         ]
 
         for key, desc in hotkeys:
             row = tk.Frame(card, bg=self.card_bg)
             row.pack(fill="x", pady=1.5)
-            tk.Label(row, text=key, font=("Consolas", 9, "bold"), fg=self.accent_cyan, bg=self.card_bg, width=14, anchor="w").pack(side="left")
+            tk.Label(row, text=key, font=("Consolas", 9, "bold"), fg=self.accent_cyan, bg=self.card_bg, width=12, anchor="w").pack(side="left")
             tk.Label(row, text=desc, font=("Segoe UI", 9), fg=self.text_muted, bg=self.card_bg).pack(side="left")
 
     def browse_demo_file(self):
@@ -542,7 +528,7 @@ class ReplayStudioLauncherApp:
         if self.cs2_proc:
             try:
                 self.cs2_proc.wait()
-                self.log("Counter-Strike 2 closed. Terminating companion overlay...")
+                self.log("Counter-Strike 2 closed. Replay session ended.")
                 self.stop_all()
             except Exception:
                 pass
@@ -591,39 +577,11 @@ class ReplayStudioLauncherApp:
         # Monitor CS2 process so companion overlay terminates automatically when game closes
         threading.Thread(target=self._monitor_cs2_process, daemon=True).start()
 
-        # 4. Launch External Overlay only if explicitly requested
-        if self.var_launch_external_overlay.get():
-            self._start_overlay_process(port)
-        else:
-            self.log("Native in-engine Panorama HUD & Menu active in CS2! (Zero external overlay clutter)")
-
-    def launch_overlay_only(self):
-        port = self.var_netcon_port.get().strip() or "2121"
-        self._start_overlay_process(port)
-
-    def _start_overlay_process(self, port: str):
-        overlay_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
-        cmd = [sys.executable, overlay_script, "--netcon-port", port]
-        if self.selected_demo_path:
-            cmd.append(self.selected_demo_path)
-
-        self.log("Starting in-game transparent HUD overlay...")
-        try:
-            self.overlay_proc = subprocess.Popen(cmd)
-            self.log("Overlay running! Press [F1] or [INSERT] in CS2 to toggle in-game settings.")
-        except Exception as e:
-            self.log(f"Failed to launch overlay: {e}")
+        self.log("Native in-engine Panorama HUD & Menu active in CS2! (Zero external overlay clutter)")
+        self.log("Press [F1] in CS2 to toggle in-engine Settings & Anomaly Navigator.")
 
     def stop_all(self):
         self.log("Stopping active replay session...")
-        if self.overlay_proc:
-            try:
-                self.overlay_proc.terminate()
-                self.log("Overlay terminated.")
-            except Exception:
-                pass
-            self.overlay_proc = None
-
         if self.cs2_proc:
             try:
                 self.cs2_proc.terminate()

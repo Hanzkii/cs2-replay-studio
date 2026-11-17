@@ -1,5 +1,5 @@
 {
-  "version": "1.4.1",
-  "commit_sha": "fb7b590",
-  "commit_msg": "fix: disable static mock preview, prioritize native Panorama in launcher, and add -dev flag"
+  "version": "1.5.0",
+  "commit_sha": "f1883be",
+  "commit_msg": "refactor: transition to 100% native in-engine Panorama HUD; remove external overlay"
 }

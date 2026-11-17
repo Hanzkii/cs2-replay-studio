@@ -91,16 +91,16 @@ class CS2NetconClient:
 
     def try_connect(self) -> bool:
         with self._lock:
-            if self.connected:
+            if self.connected and self.sock:
                 return True
             now = time.time()
-            if now - self.last_attempt_time < 2.0:
-                return False
+            if now - self.last_attempt_time < 1.5:
+                return self.connected
             self.last_attempt_time = now
 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.5)
+                s.settimeout(0.6)
                 s.connect((self.host, self.port))
                 s.setblocking(False)
                 self.sock = s
@@ -111,9 +111,16 @@ class CS2NetconClient:
                 self.sock = None
                 return False
 
+    def is_connected(self) -> bool:
+        return self.connected and self.sock is not None
+
     def send_command(self, cmd: str) -> bool:
+        """Sends raw console command string to CS2 via Netcon."""
+        if not self.is_connected():
+            if not self.try_connect():
+                return False
         with self._lock:
-            if not self.connected or not self.sock:
+            if not self.sock:
                 return False
             try:
                 payload = (cmd.strip() + "\n").encode("utf-8")
@@ -123,6 +130,47 @@ class CS2NetconClient:
                 self.connected = False
                 self.sock = None
                 return False
+
+    def goto_tick(self, tick: int) -> bool:
+        """Seeks CS2 demo playback to specified tick."""
+        return self.send_command(f"demo_gototick {max(0, int(tick))}")
+
+    def toggle_pause(self) -> bool:
+        """Toggles play/pause state in CS2 demo playback."""
+        return self.send_command("demo_togglepause")
+
+    def pause(self) -> bool:
+        """Pauses CS2 demo playback."""
+        return self.send_command("demo_pause")
+
+    def resume(self) -> bool:
+        """Resumes CS2 demo playback."""
+        return self.send_command("demo_resume")
+
+    def set_timescale(self, scale: float) -> bool:
+        """Sets playback speed multiplier (e.g. 0.25, 0.5, 1.0, 2.0)."""
+        return self.send_command(f"demo_timescale {scale:.2f}")
+
+    def spec_player(self, player_name: str) -> bool:
+        """Locks spectator camera onto the specified player name."""
+        clean_name = player_name.strip().strip('"')
+        return self.send_command(f'spec_player "{clean_name}"')
+
+    def spec_mode(self, mode: int) -> bool:
+        """Sets spectator camera perspective: 1=First Person, 2=Chase/3rd Person, 6=Free Roam."""
+        return self.send_command(f"spec_mode {mode}")
+
+    def toggle_lag_compensation_box(self) -> bool:
+        """Toggles in-engine lag compensation debug hitboxes."""
+        return self.send_command("toggle sv_showlagcompensation 0 1")
+
+    def toggle_bullet_impacts(self) -> bool:
+        """Toggles client/server bullet impact visualization."""
+        return self.send_command("toggle sv_showimpacts 0 1")
+
+    def toggle_wireframe_models(self) -> bool:
+        """Toggles wireframe player model rendering."""
+        return self.send_command("toggle r_drawothermodels 1 2")
 
     def read_output(self) -> str:
         with self._lock:

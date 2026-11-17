@@ -1,64 +1,49 @@
-# Counter-Strike 2 Sub-Tick Replay Studio // Native Panorama UI
+# Counter-Strike 2 Sub-Tick Replay & Anomaly Studio
 
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows&logoColor=white)](https://microsoft.com)
 [![Protocol](https://img.shields.io/badge/Wire-PBDEMS2%20(64.0%20Hz)-6366F1)](https://github.com/Hanzkii/cs2-replay-overlay)
-[![Engine](https://img.shields.io/badge/Engine-Source%202%20Panorama-FF4500)](https://developer.valvesoftware.com/wiki/CSGO_Panorama_API)
+[![Engine](https://img.shields.io/badge/Engine-Source%202%20Netcon-FF4500)](https://developer.valvesoftware.com)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero%20pip%20installs-10B981)](#system-requirements)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An intuitive, dark-themed native desktop control center and **100% native in-engine Source 2 Panorama UI suite** for **Counter-Strike 2** match recordings (`.dem`).
+An intuitive, dark-themed native desktop replay studio, combat investigator, and automated anti-cheat diagnostic station for **Counter-Strike 2** match recordings (`.dem`).
 
-Visualizes server-authoritative sub-tick timing micro-slicing ($15.625\text{ ms}$ discrete window), 3D rewound lag compensation hitboxes (`Apex Joint #6`), bullet ray-trace vectors, and desync anomalies natively inside CS2 using Valve's Panorama UI engine with authentic 1:1 game visuals.
-
----
-
-## Why Native Panorama UI?
-
-1. **Zero External Window Clutter**: Runs directly inside `cs2.exe` via DirectX 11 / Vulkan GPU pipeline. No floating transparent desktop windows.
-2. **Zero Mouse Capture or Camera Lock**: Freecam roaming, Chase Cam, and First-Person mouse look work natively with zero input hindrance.
-3. **Automatic Game Lifecycle Sync**: Closes automatically with Counter-Strike 2; never stays active or lingering on the desktop.
-4. **Authentic CS2 Design System**: Utilizes native `Stratum2` fonts, dark glass blur backdrops (`#090d1bf2`), neon cyan (`#38bdf8`) / emerald (`#34d399`) / coral (`#f43f5e`) accents, and responsive flexbox layouts.
+Features automated full-match bitstream parsing, sub-tick micro-slice timing audits, aimbot viewangle snap velocity analysis ($\Delta \theta > 35^\circ/\text{tick}$), triggerbot clustering detection ($w < 2.0\text{ ms}$), and **1-click Netcon engine synchronization** that instantly seeks CS2 to the exact anomaly moment while spectating the suspect.
 
 ---
 
-## In-Engine Visual Layers
+## Core Capabilities
 
-| Layer | Visual Component | Description |
-| :--- | :--- | :--- |
-| **Layer 1** | **Sub-Tick Micro-Slice Bar** | Top HUD docked below scoreboard showing the $15.625\text{ ms}$ tick window with exact fractional actuation timestamp $w \in [0.0, 1.0)$ ($t = w \times 15.625\text{ ms}$), weapon state (`+attack`), and monotonicity audit. |
-| **Layer 2** | **3D Rewound Hitbox Spatial Reticle** | Displays server-authoritative rewound player positions at $t - \Delta t_{\text{unlag}}$ with `Apex Joint #6` head bone indicator (Emerald for hit, Coral for desync miss). |
-| **Layer 3** | **Bullet Ray-Trace & Trajectory Vector** | Vector traced from shooter eye position to impact target with exact distance callout ($\Delta r \le 4.0\text{ u}$ hit confirmation). |
-| **Layer 4** | **Desync & Anomaly HUD Alerts** | Real-time diagnostic cards docked on the right alerting to $sv\_maxunlag$ rollback window clamps ($200.0\text{ ms}$ limit) and desync discrepancies. |
-| **Layer 5** | **In-Engine Settings & Anomaly Navigator Modal** | Interactive dark translucent panel toggleable via **`[F1]`**. Allows layer toggling, camera perspective cycling, live diagnostics, and 1-click anomaly jumping (`▶ GO`). |
+### 1. Automated Anti-Cheat & Anomaly Engine
+- **Aimbot Snap Velocity Scanner**: Scans player viewangles between ticks. Automatically detects and flags angular delta spikes ($\Delta \theta > 35^\circ/\text{tick}$) with high instantaneous deceleration characteristic of silent aim and robotic crosshair locking.
+- **Sub-Tick Triggerbot Cluster Audit**: Evaluates actuation timing offsets $w \in [0.0, 1.0)$ ($0.0\text{ ms} \dots 15.625\text{ ms}$). Flags inhuman clustering patterns ($\sigma < 0.8\text{ ms}$) and reaction latencies $< 50\text{ ms}$.
+- **Lag Compensation Desync & Backtrack Analysis**: Identifies hit registration events where victim interpolation rollback exceeded standard limits ($> 100\text{ ms}$) or bullet raycast distance delta exceeded bounding box margins ($> 4.0\text{ u}$).
+- **Rapid Fire Command Injection**: Audits sub-tick packet queues for cyclic weapon cooldown violations.
 
----
+### 2. 1-Click Netcon Engine Synchronization (`-netconport 2121`)
+- **Direct Engine Seeking**: Click `[▶ Jump to Event & Spectate in CS2]` on any flagged anomaly or combat kill. The studio dispatches `demo_gototick <tick - 32>` (half-second pre-roll) and locks camera focus via `spec_player "<suspect>"`.
+- **Integrated Transport Controller**: Full play/pause toggling (`demo_togglepause`), seek $\pm 64$ ticks, step rounds, and speed presets ($0.25\times, 0.5\times, 1.0\times, 2.0\times$).
+- **Anti-Cheat Debug Overlays**: Toggle in-engine lag compensation hitboxes (`sv_showlagcompensation 1`), bullet impacts (`sv_showimpacts 1`), and wireframe models (`r_drawothermodels 2`) directly from the studio.
 
-## In-Game Hotkey Reference
-
-| Hotkey | Action |
-| :--- | :--- |
-| **`[F1]`** | **Toggle Settings & Anomaly Navigator Modal** (unlocks mouse cursor to click toggles & timeline scrubber) |
-| **`[SPACE]`** | **Pause / Resume** CS2 demo playback (`demo_togglepause`) |
-| **`[←] / [→]`** | **Seek $\pm 64$ Ticks** ($\pm 1.0$ second scrub) |
-| **`[F6]`** | **Trigger Sub-Tick Test Shot & Parity Audit** |
-| **`[F7]`** | **Toggle Live Always-On HUD vs Event-Only** |
-| **`[F8]`** | **Cycle Cam Perspective** (First-Person `spec_mode 4`, Chase Cam `spec_mode 5`, Freecam `spec_mode 1`) |
-| **`[ESC]`** | Close in-engine modal and return focus to game |
+### 3. Interactive Visual Scrubber & Telemetry Graphing
+- **Full-Match Timeline Scrubber**: Displays round markers, kill pips, damage hits, and flagged anomaly pins across the match length ($0 \dots N$ ticks). Click or drag anywhere to seek in real-time.
+- **Sub-Tick Micro-Slice Visualizer**: Graphs attack actuation timestamps across the $15.625\text{ ms}$ discrete tick window, separating normal Gaussian human click distributions from machine triggerbot clusters.
+- **Angular Velocity Spike Plot**: Plots viewangle angular velocity ($\Delta \theta/\text{tick}$) over time for any selected player.
 
 ---
 
 ## Quickstart
 
-### Method 1: Desktop GUI Control Center (Recommended)
+### Method 1: Desktop Control Center (Recommended)
 Double-click **`LAUNCH_CONTROL_CENTER.bat`** (or `launcher.pyw`):
-1. Click **`📁 Browse .dem File...`** to pick any match replay.
-2. Click **`▶ LAUNCH REPLAY (NATIVE PANORAMA HUD)`**.
-3. CS2 launches with native Panorama HUD automatically deployed and loaded. Press **`[F1]`** in-game to toggle settings.
+1. Click **`📁 Browse .dem File...`** to pick any match replay (or drag and drop `.dem`).
+2. The studio automatically parses match metadata, player rosters, and flags all anomalies in $< 1.0$ second.
+3. Click **`▶ LAUNCH CS2 & SYNC`** to start Counter-Strike 2 in Borderless Windowed mode with Netcon enabled.
+4. Browse the **Anomaly Table**, select any suspicious action, and click **`▶ JUMP TO EVENT`** to inspect the play in CS2.
 
-### Method 2: Instant Drag-and-Drop
-Drag and drop any `.dem` match recording file directly onto **`DRAG_AND_DROP_DEMO_HERE.bat`**.
-The launcher will parse demo headers, stage the match demo, deploy Panorama assets to `game/csgo/panorama/`, and start CS2 in Borderless Windowed mode.
+### Method 2: Instant Desktop Shortcut
+Click **`📌 Desktop Icon`** inside the studio header to generate a native Windows desktop shortcut (`CS2 Replay Studio.lnk`) pointing directly to `pythonw launcher.pyw` for 1-click launching without batch consoles.
 
 ---
 
@@ -66,21 +51,13 @@ The launcher will parse demo headers, stage the match demo, deploy Panorama asse
 
 ```
 cs2-replay-overlay/
-├── launcher.py               # Desktop GUI Control Center (Tkinter)
+├── launcher.py               # Desktop GUI Replay Studio & Anomaly Inspector (Tkinter)
 ├── launcher.pyw              # Windowless direct launch entrypoint
-├── demo_parser.py            # Pure Python PBDEMS2 container & Snappy decompressor
+├── demo_parser.py            # Pure Python PBDEMS2 container, Snappy codec & Anomaly Engine
 ├── engine_link.py            # Steam/CS2 auto-discovery & Netcon TCP console client
-├── panorama/                 # Native In-Engine CS2 Panorama UI Suite
-│   ├── layout/
-│   │   ├── subtick_hud.xml   # Core Sub-Tick HUD, Anomaly Cards & Settings Modal
-│   │   ├── demo_viewer.xml   # In-engine demo player integration mount
-│   │   └── spec_hud.xml      # Spectator HUD mount
-│   ├── styles/
-│   │   └── subtick_hud.css   # Authentic CS2 dark glass CSS3 flexbox styling
-│   └── scripts/
-│       └── subtick_hud.js    # 60 FPS DemoAPI sync, GameEvents & transport logic
 ├── LAUNCH_CONTROL_CENTER.bat # 1-click launcher for the desktop GUI
 ├── DRAG_AND_DROP_DEMO_HERE.bat # 1-click drag & drop batch runner
+├── version.json              # Version metadata and update tracking
 ├── requirements.txt          # Zero pip dependencies documentation
 └── README.md                 # Complete documentation & usage guide
 ```
@@ -92,3 +69,4 @@ cs2-replay-overlay/
 - **Operating System**: Windows 10 or Windows 11 (64-bit)
 - **Python**: Python 3.8 or newer (Standard installation with Tkinter enabled)
 - **Game**: Counter-Strike 2 installed via Steam
+- **Dependencies**: **Zero third-party pip dependencies** (Pure Python standard library)

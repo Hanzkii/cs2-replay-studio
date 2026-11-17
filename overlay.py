@@ -52,6 +52,13 @@ GWL_EXSTYLE = -20
 WS_EX_LAYERED = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOPMOST = 0x00000008
+WS_EX_NOACTIVATE = 0x08000000
+
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
+SWP_NOACTIVATE = 0x0010
+SWP_FRAMECHANGED = 0x0020
 
 VK_F1 = 0x70
 VK_F2 = 0x71
@@ -83,15 +90,11 @@ class POINT(ctypes.Structure):
         ("y", ctypes.c_long)
     ]
 
-def get_cs2_window_rect() -> Tuple[int, int, int, int]:
-    """Returns (x, y, width, height) of the CS2 client window area, with robust desktop fallback."""
-    # 1. Search by exact CS2 window title
+def get_cs2_hwnd() -> Optional[int]:
+    """Finds Counter-Strike 2 window handle across title, SDL class, and window enum."""
     hwnd = user32.FindWindowW(None, "Counter-Strike 2")
-    # 2. Search by Source 2 SDL window class
     if not hwnd:
         hwnd = user32.FindWindowW("SDL_app", None)
-
-    # 3. Search top-level window titles for Counter-Strike
     if not hwnd:
         found_hwnds = []
         def _enum_proc(h, extra):
@@ -107,7 +110,34 @@ def get_cs2_window_rect() -> Tuple[int, int, int, int]:
         user32.EnumWindows(cb, 0)
         if found_hwnds:
             hwnd = found_hwnds[0]
+    return hwnd
 
+def focus_cs2():
+    """Restores foreground active focus to Counter-Strike 2 so mouse look and freecam work unimpeded."""
+    hwnd = get_cs2_hwnd()
+    if hwnd and user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd):
+        try:
+            fg = user32.GetForegroundWindow()
+            if fg != hwnd:
+                fg_thread = user32.GetWindowThreadProcessId(fg, None)
+                cur_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+                if fg_thread and fg_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, fg_thread, True)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.BringWindowToTop(hwnd)
+                    user32.AttachThreadInput(cur_thread, fg_thread, False)
+                else:
+                    user32.SetForegroundWindow(hwnd)
+                    user32.BringWindowToTop(hwnd)
+        except Exception:
+            try:
+                user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+
+def get_cs2_window_rect() -> Tuple[int, int, int, int]:
+    """Returns (x, y, width, height) of the CS2 client window area, with robust desktop fallback."""
+    hwnd = get_cs2_hwnd()
     if hwnd and user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd):
         rect = RECT()
         if user32.GetClientRect(hwnd, ctypes.byref(rect)):
@@ -172,6 +202,9 @@ class CS2InGameOverlayApp:
         # Inspect demo metadata if available
         self.total_demo_ticks = 150000
         self.current_tick = 64
+        self.interpolated_tick = 64
+        self.last_tick_update_time = 0.0
+        self.is_playback_running = True
         if demo_file and os.path.exists(demo_file):
             summary = CS2DemoSummary.inspect_file(demo_file)
             if summary.get("valid"):
@@ -281,31 +314,54 @@ class CS2InGameOverlayApp:
     def _set_clickthrough(self, enable: bool):
         if not self.top_hwnd:
             return
-        style = user32.GetWindowLongW(self.top_hwnd, GWL_EXSTYLE)
-        if enable:
-            user32.SetWindowLongW(self.top_hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT)
-            self.is_transparent_clickthrough = True
-        else:
-            user32.SetWindowLongW(self.top_hwnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT)
-            self.is_transparent_clickthrough = False
+        try:
+            cur_style = user32.GetWindowLongW(self.top_hwnd, GWL_EXSTYLE)
+            if enable:
+                new_style = cur_style | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE
+                user32.SetWindowLongW(self.top_hwnd, GWL_EXSTYLE, new_style)
+                user32.SetWindowPos(
+                    self.top_hwnd, 0, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+                )
+                self.is_transparent_clickthrough = True
+                # Return focus to CS2 immediately so player can freely look and rotate camera
+                focus_cs2()
+            else:
+                new_style = (cur_style & ~WS_EX_TRANSPARENT & ~WS_EX_NOACTIVATE) | WS_EX_LAYERED
+                user32.SetWindowLongW(self.top_hwnd, GWL_EXSTYLE, new_style)
+                user32.SetWindowPos(
+                    self.top_hwnd, 0, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
+                )
+                user32.SetForegroundWindow(self.top_hwnd)
+                self.is_transparent_clickthrough = False
+        except Exception:
+            pass
 
     def _netcon_worker(self):
-        """Maintains Netcon connection and queries real-time camera position & demo ticks."""
+        """Maintains Netcon connection, drains console responses, and queries camera & demo ticks."""
         while True:
-            if not self.netcon.connected:
-                self.netcon.try_connect()
-            else:
-                # Query camera position and demo playback information every 350ms
+            try:
+                if not self.netcon.connected:
+                    self.netcon.try_connect()
+                    time.sleep(1.0)
+                    continue
+
+                # Query camera position and demo playback information every 200ms
                 now = time.time()
-                if now - self.last_getpos_time > 0.35:
+                if now - self.last_getpos_time > 0.20:
                     self.last_getpos_time = now
                     self.netcon.send_command("getpos_exact; demo_info")
-                    time.sleep(0.04)
-                    resp = self.netcon.read_output()
-                    if resp:
-                        self._parse_netcon_response(resp)
 
-            time.sleep(0.15)
+                # Continuously drain all incoming output
+                resp = self.netcon.read_output()
+                if resp:
+                    self._parse_netcon_response(resp)
+
+            except Exception:
+                pass
+
+            time.sleep(0.04)
 
     def _parse_netcon_response(self, text: str):
         # 1. Parse Camera Position and Angles
@@ -319,32 +375,49 @@ class CS2InGameOverlayApp:
                 pass
 
         # 2. Parse Live CS2 Demo Playback Tick
-        # Matches patterns like: "Playback tick: 27703", "Current tick: 27703", "Tick: 27703", "demo_info: 27703"
-        m_tick = re.search(r'(?:playback\s*tick|current\s*tick|demo\s*tick|tick|frame)[\s:]+(\d+)', text, re.I)
-        if m_tick:
+        # Case A: Exact CS2 engine demo_info output: "Currently playing %d of %d ticks"
+        m_play = re.search(r'Currently\s+playing\s+(\d+)\s+of\s+(\d+)\s+ticks', text, re.I)
+        if m_play:
             try:
-                parsed_tick = int(m_tick.group(1))
-                if parsed_tick > 0:
+                parsed_tick = int(m_play.group(1))
+                parsed_total = int(m_play.group(2))
+                if parsed_tick >= 0:
                     self.current_tick = parsed_tick
-                    # Check for auto-triggering detected anomalies during demo playback
-                    for a in self.anomalies:
-                        if abs(a["tick"] - parsed_tick) <= 2:
-                            if not self.active_engagement or self.active_engagement.tick != a["tick"]:
-                                self.active_engagement = EngagementEvent(
-                                    tick=a["tick"],
-                                    subtick_frac=a["subtick_frac"],
-                                    button_name="IN_ATTACK",
-                                    unlag_ms=a["unlag_ms"],
-                                    is_hit=a["is_hit"],
-                                    ray_dist=a["ray_dist"],
-                                    duration=3.0
-                                )
-                            break
+                    self.last_tick_update_time = time.time()
+                    self.is_playback_running = True
+                if parsed_total > 1000:
+                    self.total_demo_ticks = max(self.total_demo_ticks, parsed_total)
             except Exception:
                 pass
+        else:
+            # Case B: "Going to tick %u..." or "demo_gototick %u"
+            m_goto = re.search(r'(?:going\s+to\s+tick|gototick)\s*(\d+)', text, re.I)
+            if m_goto:
+                try:
+                    self.current_tick = int(m_goto.group(1))
+                    self.last_tick_update_time = time.time()
+                except Exception:
+                    pass
+            else:
+                # Case C: Generic tick matching
+                m_tick = re.search(r'(?:playback\s*tick|current\s*tick|demo\s*tick|tick)[\s:]+(\d+)', text, re.I)
+                if m_tick:
+                    try:
+                        parsed_tick = int(m_tick.group(1))
+                        if parsed_tick > 0:
+                            self.current_tick = parsed_tick
+                            self.last_tick_update_time = time.time()
+                    except Exception:
+                        pass
 
-        # 3. Parse Max / Total Ticks if reported
-        m_total = re.search(r'(?:total\s*ticks|max\s*ticks|of|/)\s*(\d+)', text, re.I)
+        # 3. Check for pause state
+        if re.search(r'demo_pause|playback\s+paused|\bpaused\b', text, re.I):
+            self.is_playback_running = False
+        elif re.search(r'demo_resume|resumed|unpaused', text, re.I):
+            self.is_playback_running = True
+
+        # 4. Total ticks fallback
+        m_total = re.search(r'(?:total\s*ticks|max\s*ticks|of)\s*(\d+)', text, re.I)
         if m_total:
             try:
                 total_val = int(m_total.group(1))
@@ -479,6 +552,7 @@ class CS2InGameOverlayApp:
             self.win_y = y
             self.root.geometry(f"{w}x{h}+{x}+{y}")
             self.canvas.config(width=w, height=h)
+            self._set_clickthrough(not self.menu_open)
 
         return True
 
@@ -490,7 +564,33 @@ class CS2InGameOverlayApp:
         self._poll_global_hotkeys()
         active = self._sync_window_position()
 
+        # Compute smooth interpolated playback tick if demo is playing
+        if self.is_playback_running and self.last_tick_update_time > 0:
+            elapsed = now - self.last_tick_update_time
+            if 0.02 <= elapsed < 0.60:
+                self.interpolated_tick = min(self.total_demo_ticks, self.current_tick + int(elapsed * 64.0))
+            else:
+                self.interpolated_tick = self.current_tick
+        else:
+            self.interpolated_tick = self.current_tick
+
         if active:
+            # Check for auto-triggering detected anomalies during demo playback
+            eff_tick = self.interpolated_tick
+            for a in self.anomalies:
+                if abs(a["tick"] - eff_tick) <= 2:
+                    if not self.active_engagement or self.active_engagement.tick != a["tick"]:
+                        self.active_engagement = EngagementEvent(
+                            tick=a["tick"],
+                            subtick_frac=a["subtick_frac"],
+                            button_name="IN_ATTACK",
+                            unlag_ms=a["unlag_ms"],
+                            is_hit=a["is_hit"],
+                            ray_dist=a["ray_dist"],
+                            duration=3.0
+                        )
+                    break
+
             # Check engagement event expiration
             if self.active_engagement and not self.active_engagement.is_alive():
                 self.active_engagement = None
@@ -533,8 +633,8 @@ class CS2InGameOverlayApp:
         if not active_to_draw and self.persistent_visuals:
             is_preview = True
             active_to_draw = EngagementEvent(
-                tick=self.current_tick,
-                subtick_frac=round(0.40 + ((self.current_tick % 64) / 64.0) * 0.50, 3),
+                tick=self.interpolated_tick,
+                subtick_frac=round(0.40 + ((self.interpolated_tick % 64) / 64.0) * 0.50, 3),
                 button_name="LIVE_STREAM",
                 unlag_ms=47.6,
                 is_hit=True,
@@ -579,7 +679,7 @@ class CS2InGameOverlayApp:
             fill="#090d16", outline="#3b82f6" if not is_preview else "#0284c7", width=1.5
         )
 
-        title_txt = f"SUB-TICK WIRE TIMING // 15.625 ms WINDOW" if not is_preview else f"SUB-TICK WIRE TIMING // LIVE TELEMETRY (Tick {self.current_tick})"
+        title_txt = f"SUB-TICK WIRE TIMING // 15.625 ms WINDOW" if not is_preview else f"SUB-TICK WIRE TIMING // LIVE TELEMETRY (Tick {self.interpolated_tick})"
         self.canvas.create_text(
             bar_x, bar_y - 7,
             text=title_txt, fill="#818cf8", font=("Consolas", 9, "bold"), anchor="w"
@@ -923,14 +1023,14 @@ class CS2InGameOverlayApp:
         scrub_w = mw - 40
         self.canvas.create_text(
             mx + 20, scrub_y - 8,
-            text=f"Timeline Scrub: Tick {self.current_tick} / {self.total_demo_ticks}",
+            text=f"Timeline Scrub: Tick {self.interpolated_tick} / {self.total_demo_ticks}",
             fill="#38bdf8", font=("Consolas", 9, "bold"), anchor="w"
         )
         self.canvas.create_rectangle(
             mx + 20, scrub_y, mx + 20 + scrub_w, scrub_y + 14,
             fill="#0f172a", outline="#475569", width=1
         )
-        frac = min(1.0, max(0.0, self.current_tick / float(max(1, self.total_demo_ticks))))
+        frac = min(1.0, max(0.0, self.interpolated_tick / float(max(1, self.total_demo_ticks))))
         pip_x = mx + 20 + int(frac * scrub_w)
         self.canvas.create_rectangle(
             mx + 20, scrub_y, pip_x, scrub_y + 14,

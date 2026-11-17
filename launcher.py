@@ -742,7 +742,7 @@ oLink.Save
                         if len(parts) < 2 or not parts[1]:
                             continue
                         rel_file = parts[1]
-                        if rel_file.endswith((".py", ".pyw", ".bat", ".md", ".txt", ".cfg", ".json")):
+                        if rel_file.endswith((".py", ".pyw", ".bat", ".md", ".txt", ".cfg", ".json", ".xml", ".css", ".js")):
                             dest_path = os.path.join(app_dir, rel_file)
                             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                             with open(dest_path, "wb") as f_out:

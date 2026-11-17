@@ -128,15 +128,24 @@ class CS2NetconClient:
         with self._lock:
             if not self.connected or not self.sock:
                 return ""
-            try:
-                data = self.sock.recv(4096)
-                return data.decode("utf-8", "ignore") if data else ""
-            except (BlockingIOError, socket.timeout):
-                return ""
-            except Exception:
-                self.connected = False
-                self.sock = None
-                return ""
+            chunks = []
+            while True:
+                try:
+                    data = self.sock.recv(4096)
+                    if not data:
+                        self.connected = False
+                        self.sock = None
+                        break
+                    chunks.append(data)
+                    if len(data) < 4096:
+                        break
+                except (BlockingIOError, socket.timeout):
+                    break
+                except Exception:
+                    self.connected = False
+                    self.sock = None
+                    break
+            return b"".join(chunks).decode("utf-8", "ignore") if chunks else ""
 
     def disconnect(self):
         with self._lock:

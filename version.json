@@ -1,5 +1,5 @@
 {
-  "version": "1.8.2",
-  "commit_sha": "baca19e",
-  "commit_msg": "docs: add development roadmap for unified match companion (audit, highlights, coaching)"
+  "version": "1.8.3",
+  "commit_sha": "5e388f4",
+  "commit_msg": "fix: active Netcon connection polling and remove Chase/Free Roam camera buttons"
 }

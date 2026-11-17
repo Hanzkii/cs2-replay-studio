@@ -1,5 +1,5 @@
 {
-  "version": "1.6.2",
-  "commit_sha": "e42c79d",
-  "commit_msg": "fix: filter warmup ticks and decode live Snappy packet combat events for accurate in-game jumping"
+  "version": "1.7.0",
+  "commit_sha": "45f4a50",
+  "commit_msg": "refactor: remove unrelated sub-tick micro-slice and reverse visualizer tabs; full-height combat navigator"
 }

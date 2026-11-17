@@ -546,7 +546,8 @@ class CS2DemoSummary:
                     analytics["max_tick"] = events[-1]["tick"]
                 return events[:max_events], analytics
             except Exception as e:
-                pass
+                analytics["error"] = f"Demoparser error: {e}"
+        else:
+            analytics["error"] = "demoparser2 package not installed in active Python environment. Run 'pip install demoparser2' to enable 3D raycast audit."
 
-        # Fallback to packet scanner if demoparser2 fails
         return events, analytics

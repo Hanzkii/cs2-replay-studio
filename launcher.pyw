@@ -938,6 +938,8 @@ class ReplayStudioApp:
             self.analytics = analytics
 
             self.lbl_meta_events.config(text=f"Events: {len(events)}")
+            if analytics.get("error"):
+                self.log(f"⚠️ {analytics['error']}")
             self.log(f"Scan complete: {len(events)} live combat events indexed (Snaps: {analytics.get('snaps_count')}, Triggers: {analytics.get('trigger_count')}, Desyncs: {analytics.get('desync_count')})")
 
             self.apply_anomaly_filters()

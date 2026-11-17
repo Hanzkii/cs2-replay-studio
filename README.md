@@ -9,7 +9,9 @@
 
 An intuitive, dark-themed native desktop replay studio, combat investigator, and automated anti-cheat diagnostic station for **Counter-Strike 2** match recordings (`.dem`).
 
-Features automated full-match bitstream parsing, sub-tick micro-slice timing audits, aimbot viewangle snap velocity analysis ($\Delta \theta > 35^\circ/\text{tick}$), triggerbot clustering detection ($w < 2.0\text{ ms}$), and **1-click Netcon engine synchronization** that instantly seeks CS2 to the exact anomaly moment while spectating the suspect.
+Features automated full-match bitstream parsing, 3D spatial raycast crosshair alignment audits, aimbot headshot snap detection ($\Delta \theta_{\text{offset}} < 0.85^\circ$), and **1-click Netcon engine synchronization** that instantly seeks CS2 to the exact anomaly moment while spectating the suspect in first person.
+
+See [ROADMAP.md](ROADMAP.md) for the active development roadmap expanding the studio into a complete match companion (Anti-Cheat Audit + Match Highlights + Performance/Duel Coaching).
 
 ---
 

@@ -160,6 +160,36 @@ class CS2NetconClient:
         """Sets spectator camera perspective: 1=First Person, 2=Chase/3rd Person, 6=Free Roam."""
         return self.send_command(f"spec_mode {mode}")
 
+    def jump_and_inspect(self, tick: int, player_name: str, lead_ticks: int = 96, timescale: float = 0.25) -> bool:
+        """
+        Executes a reinforced jump-to-action audit sequence:
+        1. Jumps to (tick - lead_ticks) so the buildup/movement is clearly visible.
+        2. Sets slow-motion playback speed.
+        3. Forces First-Person camera (spec_mode 1).
+        4. Locks spectator target to player_name.
+        5. Reinforces in background after 250ms to ensure the engine doesn't revert to director camera.
+        """
+        lead_tick = max(0, int(tick) - int(lead_ticks))
+        clean_name = player_name.strip().strip('"')
+
+        # Batch initial burst
+        commands = [
+            f"demo_gototick {lead_tick}",
+            f"demo_timescale {timescale:.2f}",
+            "spec_mode 1",
+            f'spec_player "{clean_name}"'
+        ]
+        batch_payload = "\n".join(commands)
+        res = self.send_command(batch_payload)
+
+        # Background thread reinforcement once tick seek completes
+        def _reinforce():
+            time.sleep(0.25)
+            self.send_command(f'spec_player "{clean_name}"\nspec_mode 1\ndemo_timescale {timescale:.2f}')
+
+        threading.Thread(target=_reinforce, daemon=True).start()
+        return res
+
     def toggle_lag_compensation_box(self) -> bool:
         """Toggles in-engine lag compensation debug hitboxes."""
         return self.send_command("toggle sv_showlagcompensation 0 1")

@@ -92,6 +92,13 @@ class ReplayStudioApp:
         self.var_filter_search = tk.StringVar(value="")
         self.var_selected_telemetry_player = tk.StringVar(value="")
 
+        # Automated Anomaly Jump & Audit Configuration
+        self.var_autojump_on_click = tk.BooleanVar(value=True)
+        self.var_leadup_seconds = tk.StringVar(value="1.5s (96 ticks)")
+        self.var_slowmo_speed = tk.StringVar(value="0.25x (Super Slow)")
+        self.selected_event_tick = 0
+        self.selected_event_lead = 0
+
         # Discover CS2 initially
         self._discover_cs2()
 
@@ -499,6 +506,14 @@ class ReplayStudioApp:
             else:
                 c.create_line(ex, 12, ex, h - 12, fill="#0284c7", width=1)
 
+        # Highlight active audit window (lead-up to impact)
+        if self.selected_event_tick > 0 and self.selected_event_lead > 0 and self.max_demo_tick > 0:
+            lx = int((self.selected_event_lead / self.max_demo_tick) * w)
+            ix = int((self.selected_event_tick / self.max_demo_tick) * w)
+            if ix > lx:
+                c.create_rectangle(lx, 2, ix, h - 2, fill="#1e3a8a", outline="#3b82f6", width=1)
+                c.create_text(ix - 2, 7, text="⚡ SNAP", fill="#f87171", font=("Consolas", 7, "bold"), anchor="e")
+
         # Scrubber needle
         nx = int((self.current_tick / self.max_demo_tick) * w)
         c.create_line(nx, 0, nx, h, fill="#38bdf8", width=2)
@@ -644,32 +659,101 @@ class ReplayStudioApp:
         self.tree_anomalies.tag_configure("SUSPICIOUS", foreground="#fde047", background="#261e0b")
         self.tree_anomalies.tag_configure("INFO", foreground="#67e8f9")
 
+        self.tree_anomalies.bind("<<TreeviewSelect>>", self._on_table_row_select)
         self.tree_anomalies.bind("<Double-1>", lambda e: self.jump_selected_anomaly())
 
         # Action bar under table
-        act_bar = tk.Frame(tab, bg=self.card_bg, pady=4)
+        act_bar = tk.Frame(tab, bg=self.card_bg, pady=6)
         act_bar.pack(fill="x")
 
+        # Top row: Jump button, Lead-Up combo, Slow-mo combo, and Auto-Jump toggle
+        param_row = tk.Frame(act_bar, bg=self.card_bg)
+        param_row.pack(fill="x", pady=(0, 4))
+
         self.btn_jump_event = tk.Button(
-            act_bar,
-            text="▶  JUMP TO EVENT & SPECTATE IN CS2 (demo_gototick)",
+            param_row,
+            text="🎯  JUMP & AUDIT (1ST PERSON // SLOW-MO)",
             font=("Segoe UI", 10, "bold"),
             bg="#2563eb", fg="#ffffff",
             activebackground="#3b82f6", activeforeground="#ffffff",
-            relief="flat", padx=16, pady=6,
+            relief="flat", padx=14, pady=5,
             cursor="hand2",
             command=self.jump_selected_anomaly
         )
         self.btn_jump_event.pack(side="left")
 
-        self.lbl_selected_detail = tk.Label(
-            act_bar,
-            text="Select an anomaly row and click Jump or double-click to seek CS2 immediately.",
-            font=("Segoe UI", 9),
-            fg=self.text_muted,
-            bg=self.card_bg
+        btn_resume_normal = tk.Button(
+            param_row,
+            text="▶ Resume 1.0x",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1e293b", fg=self.accent_emerald,
+            activebackground="#334155", activeforeground="#ffffff",
+            relief="flat", padx=10, pady=5,
+            cursor="hand2",
+            command=lambda: self.set_engine_timescale(1.0)
         )
-        self.lbl_selected_detail.pack(side="left", padx=14)
+        btn_resume_normal.pack(side="left", padx=(6, 12))
+
+        chk_autojump = tk.Checkbutton(
+            param_row,
+            text="Auto-Jump on Click",
+            variable=self.var_autojump_on_click,
+            font=("Segoe UI", 9, "bold"),
+            bg=self.card_bg, fg=self.accent_cyan,
+            selectcolor="#090d16", activebackground=self.card_bg, activeforeground=self.accent_cyan
+        )
+        chk_autojump.pack(side="left", padx=(0, 10))
+
+        tk.Label(param_row, text="Lead-Up:", font=("Segoe UI", 9), fg=self.text_muted, bg=self.card_bg).pack(side="left")
+        self.cb_leadup = ttk.Combobox(
+            param_row,
+            textvariable=self.var_leadup_seconds,
+            values=["0.5s (32 ticks)", "1.0s (64 ticks)", "1.5s (96 ticks)", "2.0s (128 ticks)", "2.5s (160 ticks)"],
+            state="readonly",
+            width=15
+        )
+        self.cb_leadup.pack(side="left", padx=(4, 10))
+
+        tk.Label(param_row, text="Slow-Mo Speed:", font=("Segoe UI", 9), fg=self.text_muted, bg=self.card_bg).pack(side="left")
+        self.cb_slowmo = ttk.Combobox(
+            param_row,
+            textvariable=self.var_slowmo_speed,
+            values=["0.20x (Extreme)", "0.25x (Super Slow)", "0.35x (Smooth Slow)", "0.50x (Half Speed)", "1.00x (Normal)"],
+            state="readonly",
+            width=18
+        )
+        self.cb_slowmo.pack(side="left", padx=(4, 0))
+
+        # Bottom row: Informative live status text
+        detail_row = tk.Frame(act_bar, bg=self.card_bg)
+        detail_row.pack(fill="x")
+
+        self.lbl_selected_detail = tk.Label(
+            detail_row,
+            text="Click any anomaly row to jump ~1.5s before the action directly into the suspect's 1st-person view in slow motion.",
+            font=("Consolas", 9),
+            fg=self.accent_emerald,
+            bg=self.card_bg,
+            anchor="w"
+        )
+        self.lbl_selected_detail.pack(fill="x", pady=(2, 0))
+
+    def _on_table_row_select(self, event=None):
+        if self.var_autojump_on_click.get():
+            self.jump_selected_anomaly()
+        else:
+            sel = self.tree_anomalies.selection()
+            if sel:
+                item = self.tree_anomalies.item(sel[0])
+                vals = item.get("values", [])
+                if vals:
+                    tick = int(vals[0])
+                    player = vals[4]
+                    cat = vals[5]
+                    self.lbl_selected_detail.config(
+                        text=f"Selected: {player} ({cat}) @ Tick {tick:06d}. Click 'JUMP & AUDIT' to spectate in 1st person.",
+                        fg=self.accent_cyan
+                    )
 
     def apply_anomaly_filters(self):
         """Filters anomaly list and populates Treeview."""
@@ -749,15 +833,51 @@ class ReplayStudioApp:
         tick = int(vals[0])
         player = vals[4]
         category = vals[5]
+        weapon = vals[6]
 
-        # Lead-up 32 ticks (half a second) before the impact so the user observes the crosshair placement & snap
-        lead_tick = max(0, tick - 32)
-        self.seek_to_tick(lead_tick, suspect_to_spec=player)
-        self.set_engine_timescale(0.5)  # Slow down playback for audit clarity
-        self.lbl_selected_detail.config(
-            text=f"Jumped to Tick {lead_tick:06d} (Impact @ {tick:06d}) | Spectating: {player} ({category})",
-            fg=self.accent_emerald
-        )
+        # Parse lead-up ticks
+        leadup_str = self.var_leadup_seconds.get()
+        lead_ticks = 96
+        if "32" in leadup_str: lead_ticks = 32
+        elif "64" in leadup_str: lead_ticks = 64
+        elif "96" in leadup_str: lead_ticks = 96
+        elif "128" in leadup_str: lead_ticks = 128
+        elif "160" in leadup_str: lead_ticks = 160
+
+        # Parse slowmo speed
+        slowmo_str = self.var_slowmo_speed.get()
+        timescale = 0.25
+        if "0.20" in slowmo_str: timescale = 0.20
+        elif "0.25" in slowmo_str: timescale = 0.25
+        elif "0.35" in slowmo_str: timescale = 0.35
+        elif "0.50" in slowmo_str: timescale = 0.50
+        elif "1.00" in slowmo_str: timescale = 1.00
+
+        lead_tick = max(0, tick - lead_ticks)
+        lead_sec = round(lead_ticks / 64.0, 2)
+
+        # Update visual timeline state
+        self.current_tick = lead_tick
+        self.selected_event_tick = tick
+        self.selected_event_lead = lead_tick
+        self.draw_timeline()
+
+        # Update position readout
+        total_secs = lead_tick // 64
+        mins = total_secs // 60
+        secs = total_secs % 60
+        self.lbl_scrub_pos.config(text=f"Tick {lead_tick:06d} ({mins:02d}:{secs:02d}) / {self.max_demo_tick}")
+
+        # Dispatch reinforced Netcon sequence (goto lead tick -> 1st person -> spectate -> slow motion)
+        if self.netcon.is_connected() or self.netcon.try_connect():
+            self.netcon.jump_and_inspect(tick=tick, player_name=player, lead_ticks=lead_ticks, timescale=timescale)
+            msg = f"🎯 Jumped: {player} (1st Person) | Lead: -{lead_sec}s (Tick {lead_tick:06d}) -> Snap @ Tick {tick:06d} | Speed: {timescale}x"
+            self.log(msg)
+            self.lbl_selected_detail.config(text=msg, fg=self.accent_emerald)
+        else:
+            msg = f"Target Tick {lead_tick:06d} set (Impact @ {tick:06d}). Netcon not connected yet."
+            self.log(msg)
+            self.lbl_selected_detail.config(text=msg, fg=self.accent_amber)
 
     # =========================================================================
     # TAB 2: SUB-TICK MICRO-SLICE & PLAYER TELEMETRY

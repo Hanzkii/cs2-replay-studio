@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Replay recordings & media captures (strictly local)
+*.dem
+*.DEM
+*.mp4
+*.avi
+*.tga
+*.wav
+rendered_clips/
+
+# Scratch & temporary logs
+temp/
+tools/temp/
+tmp/
+*.log
+
+# Windows & OS artifacts
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

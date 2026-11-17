@@ -1,0 +1,10 @@
+# Counter-Strike 2 Sub-Tick Replay Studio & In-Game Overlay
+#
+# ZERO PIP DEPENDENCIES REQUIRED!
+# Pure Python standard library implementation:
+#   - tkinter (Native Windows GUI)
+#   - ctypes  (Win32 transparent layered window composition & hotkey polling)
+#   - socket  (Netcon TCP console communication)
+#   - struct  (PBDEMS2 binary wire protocol & Snappy framing)
+#
+# Requires: Python 3.8+ on Windows 10/11 x64

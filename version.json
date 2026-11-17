@@ -1,5 +1,5 @@
 {
-  "version": "1.6.1",
-  "commit_sha": "59e00e3",
-  "commit_msg": "feat: automated lead-up jump to 1st person perspective with slow-mo replay on click"
+  "version": "1.6.2",
+  "commit_sha": "e42c79d",
+  "commit_msg": "fix: filter warmup ticks and decode live Snappy packet combat events for accurate in-game jumping"
 }

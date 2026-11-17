@@ -879,14 +879,19 @@ class ReplayStudioApp:
         def _poll_loop():
             while True:
                 time.sleep(1.5)
-                is_conn = self.netcon.is_connected()
-                if not is_conn and self.cs2_proc and self.cs2_proc.poll() is None:
-                    self.netcon.try_connect()
+                try:
+                    if not self.root or not self.root.winfo_exists():
+                        break
                     is_conn = self.netcon.is_connected()
+                    if not is_conn and self.cs2_proc and self.cs2_proc.poll() is None:
+                        self.netcon.try_connect()
+                        is_conn = self.netcon.is_connected()
 
-                status_txt = "● Netcon: Connected (2121)" if is_conn else "○ Netcon: Standby"
-                status_col = self.accent_emerald if is_conn else self.text_muted
-                self.root.after(0, lambda: self.lbl_netcon_status.config(text=status_txt, fg=status_col))
+                    status_txt = "● Netcon: Connected (2121)" if is_conn else "○ Netcon: Standby"
+                    status_col = self.accent_emerald if is_conn else self.text_muted
+                    self.root.after(0, lambda: self.lbl_netcon_status.config(text=status_txt, fg=status_col))
+                except Exception:
+                    break
 
         threading.Thread(target=_poll_loop, daemon=True).start()
 
@@ -928,7 +933,7 @@ class ReplayStudioApp:
             self.cb_filter_player["values"] = p_values
 
             # Run genuine live combat event scan
-            events, analytics = CS2DemoSummary.scan_anomalies(self.selected_demo_path, max_events=120)
+            events, analytics = CS2DemoSummary.scan_anomalies(self.selected_demo_path, max_events=1000)
             self.anomalies = events
             self.analytics = analytics
 

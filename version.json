@@ -1,5 +1,5 @@
 {
   "version": "1.4.0",
-  "commit_sha": "d049f7b",
+  "commit_sha": "98124c4",
   "commit_msg": "feat(panorama): native in-engine CS2 Panorama HUD, settings menu & auto-exit on game close"
 }

@@ -1,5 +1,5 @@
 {
-  "version": "1.6.0",
-  "commit_sha": "4d20c31",
-  "commit_msg": "feat: Sub-Tick Replay & Anomaly Studio with automated aimbot/triggerbot scanner & 1-click Netcon CS2 jumping"
+  "version": "1.6.1",
+  "commit_sha": "59e00e3",
+  "commit_msg": "feat: automated lead-up jump to 1st person perspective with slow-mo replay on click"
 }

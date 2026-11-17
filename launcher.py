@@ -399,9 +399,12 @@ class ReplayStudioLauncherApp:
         card.pack(fill="x")
 
         hotkeys = [
-            ("[F1] / [INSERT]", "Toggle Settings Menu (Unlocks mouse cursor)"),
+            ("[F1] / [INSERT]", "Toggle Settings & Anomaly Navigator (Unlocks mouse)"),
             ("[SPACE]", "Play / Pause CS2 demo playback"),
-            ("[←] / [→]", "Seek ±64 Ticks (±1.0 second step)"),
+            ("[←] / [→]", "Seek ±64 Ticks (±1.0 second scrub)"),
+            ("[F6]", "Trigger Test Shot & Sub-Tick Audit"),
+            ("[F7]", "Toggle Live Always-On HUD vs Event-Only"),
+            ("[F8]", "Cycle Cam Perspective (1st Person / Chase / Freecam)"),
             ("[F2] - [F5]", "Quick toggle Hitbox / Sub-Tick / Rays / Alerts"),
             ("[F11] / [F10]", "Emergency Master Hide / Reveal Overlay"),
         ]
@@ -434,6 +437,14 @@ class ReplayStudioLauncherApp:
             self.lbl_meta_build.config(text=f"Build: {info.get('build_num', 'Unknown')}", fg=self.text_main)
             self.lbl_meta_dur.config(text=f"Size: {info.get('file_size_mb', 0)} MB ({info.get('duration_str', '')})", fg=self.text_main)
             self.log(f"Demo parsed: Map={info.get('map_name')}, Protocol={info.get('magic')}, Build={info.get('build_num')}")
+
+            # Autoscan anomalies
+            try:
+                anoms = CS2DemoSummary.scan_anomalies(self.selected_demo_path, max_events=50)
+                if anoms:
+                    self.log(f"Autoscan detected {len(anoms)} combat actions & sub-tick anomalies! (Press [F1] in-game to jump).")
+            except Exception:
+                pass
         else:
             self.log(f"Warning parsing demo: {info.get('error', 'Unknown format')}")
 

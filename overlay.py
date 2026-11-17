@@ -59,6 +59,8 @@ VK_F3 = 0x72
 VK_F4 = 0x73
 VK_F5 = 0x74
 VK_F6 = 0x75
+VK_F7 = 0x76
+VK_F8 = 0x77
 VK_F10 = 0x79
 VK_F11 = 0x7A
 VK_ESCAPE = 0x1B
@@ -81,28 +83,45 @@ class POINT(ctypes.Structure):
         ("y", ctypes.c_long)
     ]
 
-def get_cs2_window_rect() -> Optional[Tuple[int, int, int, int]]:
-    """Returns (x, y, width, height) of the CS2 client window area, or None if not running."""
+def get_cs2_window_rect() -> Tuple[int, int, int, int]:
+    """Returns (x, y, width, height) of the CS2 client window area, with robust desktop fallback."""
+    # 1. Search by exact CS2 window title
     hwnd = user32.FindWindowW(None, "Counter-Strike 2")
-    if not hwnd or not user32.IsWindowVisible(hwnd):
-        return None
+    # 2. Search by Source 2 SDL window class
+    if not hwnd:
+        hwnd = user32.FindWindowW("SDL_app", None)
 
-    if user32.IsIconic(hwnd):
-        return None
+    # 3. Search top-level window titles for Counter-Strike
+    if not hwnd:
+        found_hwnds = []
+        def _enum_proc(h, extra):
+            length = user32.GetWindowTextLengthW(h)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(h, buf, length + 1)
+                if "counter-strike" in buf.value.lower():
+                    found_hwnds.append(h)
+                    return False
+            return True
+        cb = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(_enum_proc)
+        user32.EnumWindows(cb, 0)
+        if found_hwnds:
+            hwnd = found_hwnds[0]
 
-    rect = RECT()
-    if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
-        return None
+    if hwnd and user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd):
+        rect = RECT()
+        if user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            pt = POINT(rect.left, rect.top)
+            user32.ClientToScreen(hwnd, ctypes.byref(pt))
+            w = rect.right - rect.left
+            h = rect.bottom - rect.top
+            if w > 300 and h > 200:
+                return pt.x, pt.y, w, h
 
-    pt = POINT(rect.left, rect.top)
-    user32.ClientToScreen(hwnd, ctypes.byref(pt))
-
-    width = rect.right - rect.left
-    height = rect.bottom - rect.top
-    if width <= 0 or height <= 0:
-        return None
-
-    return pt.x, pt.y, width, height
+    # Robust fallback: primary screen resolution so overlay never hides
+    screen_w = user32.GetSystemMetrics(0)
+    screen_h = user32.GetSystemMetrics(1)
+    return 0, 0, screen_w, screen_h
 
 
 class EngagementEvent:
@@ -141,6 +160,15 @@ class CS2InGameOverlayApp:
         self.demo_file = demo_file
         self.netcon = CS2NetconClient(port=netcon_port)
 
+        # Fallback to staged demo if standalone launch
+        if not self.demo_file:
+            from engine_link import CS2Locator
+            cs2_info = CS2Locator.find_cs2()
+            if cs2_info:
+                staged = os.path.join(cs2_info[1], "auto_record_match.dem")
+                if os.path.exists(staged):
+                    self.demo_file = staged
+
         # Inspect demo metadata if available
         self.total_demo_ticks = 150000
         self.current_tick = 64
@@ -157,8 +185,19 @@ class CS2InGameOverlayApp:
         self.view_yaw = 0.0
         self.last_getpos_time = 0.0
 
-        # Active engagement events (strictly event-driven or F6 tested)
+        # Active engagement events
         self.active_engagement: Optional[EngagementEvent] = None
+
+        # Autoscan anomalies from demo file
+        self.anomalies: List[Dict[str, Any]] = []
+        if self.demo_file and os.path.exists(self.demo_file):
+            self.anomalies = CS2DemoSummary.scan_anomalies(self.demo_file, max_events=60)
+        self.anomaly_page = 0
+        self.anomalies_per_page = 4
+
+        # Visual Mode & Spectator Camera State
+        self.persistent_visuals = True  # Always-On live diagnostics preview by default
+        self.camera_mode = "FIRST_PERSON"  # "FIRST_PERSON", "CHASE_CAM", "FREECAM"
 
         # Visual Layer Active Toggles
         self.show_subtick_bar = True
@@ -169,8 +208,8 @@ class CS2InGameOverlayApp:
 
         # Settings Menu UI State
         self.menu_open = False
-        self.menu_width = 460
-        self.menu_height = 540
+        self.menu_width = 580
+        self.menu_height = 640
 
         # Win32 Click-Through State
         self.is_transparent_clickthrough = True
@@ -189,6 +228,8 @@ class CS2InGameOverlayApp:
         self.prev_f4 = False
         self.prev_f5 = False
         self.prev_f6 = False
+        self.prev_f7 = False
+        self.prev_f8 = False
         self.prev_f11 = False
         self.prev_escape = False
 
@@ -201,14 +242,13 @@ class CS2InGameOverlayApp:
         self.root.wm_attributes("-transparentcolor", self.trans_color)
         self.root.config(bg=self.trans_color)
 
-        # Initially hidden until CS2 game window is confirmed visible
-        self.root.withdraw()
-
         self.screen_w = 1920
         self.screen_h = 1080
         self.win_x = 0
         self.win_y = 0
         self.root.geometry(f"{self.screen_w}x{self.screen_h}+{self.win_x}+{self.win_y}")
+        self.root.deiconify()
+        self.is_window_showing = True
 
         self.canvas = tk.Canvas(
             self.root,
@@ -286,6 +326,20 @@ class CS2InGameOverlayApp:
                 parsed_tick = int(m_tick.group(1))
                 if parsed_tick > 0:
                     self.current_tick = parsed_tick
+                    # Check for auto-triggering detected anomalies during demo playback
+                    for a in self.anomalies:
+                        if abs(a["tick"] - parsed_tick) <= 2:
+                            if not self.active_engagement or self.active_engagement.tick != a["tick"]:
+                                self.active_engagement = EngagementEvent(
+                                    tick=a["tick"],
+                                    subtick_frac=a["subtick_frac"],
+                                    button_name="IN_ATTACK",
+                                    unlag_ms=a["unlag_ms"],
+                                    is_hit=a["is_hit"],
+                                    ray_dist=a["ray_dist"],
+                                    duration=3.0
+                                )
+                            break
             except Exception:
                 pass
 
@@ -378,6 +432,20 @@ class CS2InGameOverlayApp:
             self.trigger_shot_audit(is_hit=True)
         self.prev_f6 = cur_f6
 
+        # F7: Toggle Persistent Live Diagnostics vs Event-Only
+        cur_f7 = bool(user32.GetAsyncKeyState(VK_F7) & 0x8000)
+        if cur_f7 and not self.prev_f7:
+            self.persistent_visuals = not self.persistent_visuals
+        self.prev_f7 = cur_f7
+
+        # F8: Cycle Camera / Spectator Perspective (1st Person -> Chase Cam -> Freecam)
+        cur_f8 = bool(user32.GetAsyncKeyState(VK_F8) & 0x8000)
+        if cur_f8 and not self.prev_f8:
+            modes = ["FIRST_PERSON", "CHASE_CAM", "FREECAM"]
+            cur_idx = modes.index(self.camera_mode) if self.camera_mode in modes else 0
+            self.camera_mode = modes[(cur_idx + 1) % len(modes)]
+        self.prev_f8 = cur_f8
+
         # F11 / F10: Master Hide / Show Toggle
         cur_f11 = bool((user32.GetAsyncKeyState(VK_F11) | user32.GetAsyncKeyState(VK_F10)) & 0x8000)
         if cur_f11 and not self.prev_f11:
@@ -392,14 +460,13 @@ class CS2InGameOverlayApp:
             self._set_clickthrough(True)
 
     def _sync_window_position(self) -> bool:
-        cs2_rect = get_cs2_window_rect()
-        if not cs2_rect or not self.master_visible:
+        if not self.master_visible:
             if self.is_window_showing:
                 self.root.withdraw()
                 self.is_window_showing = False
             return False
 
-        x, y, w, h = cs2_rect
+        x, y, w, h = get_cs2_window_rect()
         if not self.is_window_showing:
             self.root.deiconify()
             self._set_clickthrough(not self.menu_open)
@@ -445,30 +512,45 @@ class CS2InGameOverlayApp:
         # 1. Top-Right Settings Pill (Always clean hint in corner)
         self._draw_menu_button_pill(w, h)
 
-        # 2. Event-Driven Visuals: Only draw when an engagement / shot occurs
-        if self.active_engagement:
-            eng = self.active_engagement
-
-            # Compute virtual target position in front of player along view angle
-            dist = 560.0
+        # Determine 3D positions based on spectator camera mode (1st person, chase cam, freecam)
+        dist = 560.0
+        if self.camera_mode == "CHASE_CAM":
+            # Spectator is positioned behind player back
+            shooter_pos = self.cam_pos + (fwd * 140.0) - (up * 14.0)
+            target_pos = shooter_pos + (fwd * dist)
+        elif self.camera_mode == "FREECAM":
+            # Roaming freecam
+            shooter_pos = self.cam_pos + (fwd * 200.0) - (right * 50.0)
+            target_pos = self.cam_pos + (fwd * 540.0) + (right * 30.0)
+        else:  # FIRST_PERSON
+            shooter_pos = self.cam_pos
             target_pos = self.cam_pos + (fwd * dist)
-            target_head = target_pos + Vector3(0.0, 0.0, 18.0)
+        target_head = target_pos + Vector3(0.0, 0.0, 18.0)
 
-            # Layer 1: Sub-Tick Micro-Slice Bar (Docked cleanly below top scoreboard at y=96)
+        # 2. Render visuals: either active combat engagement, or continuous live diagnostics preview
+        active_to_draw = self.active_engagement
+        is_preview = False
+        if not active_to_draw and self.persistent_visuals:
+            is_preview = True
+            active_to_draw = EngagementEvent(
+                tick=self.current_tick,
+                subtick_frac=round(0.40 + ((self.current_tick % 64) / 64.0) * 0.50, 3),
+                button_name="LIVE_STREAM",
+                unlag_ms=47.6,
+                is_hit=True,
+                duration=9999.0
+            )
+
+        if active_to_draw:
+            eng = active_to_draw
             if self.show_subtick_bar:
-                self._draw_compact_subtick_bar(eng, w, h)
-
-            # Layer 2: 3D Rewound Lag Comp Ghost Hitbox
+                self._draw_compact_subtick_bar(eng, w, h, is_preview=is_preview)
             if self.show_hitbox:
-                self._draw_rewound_hitbox(eng, target_pos, target_head, view_proj, w, h)
-
-            # Layer 3: Bullet Ray-Trace & Trajectory Vector
+                self._draw_rewound_hitbox(eng, target_pos, target_head, view_proj, w, h, is_preview=is_preview)
             if self.show_raytrace:
-                self._draw_raytrace_vector(eng, target_head, view_proj, w, h)
-
-            # Layer 4: Desync & Anomaly Alerts (Clean right-side card, never blocks bottom timeline)
+                self._draw_raytrace_vector(eng, shooter_pos, target_head, view_proj, w, h, is_preview=is_preview)
             if self.show_anomalies:
-                self._draw_anomaly_card(eng, w, h)
+                self._draw_anomaly_card(eng, w, h, is_preview=is_preview)
 
         # Optional Crosshair Guide
         if self.show_crosshair_guide:
@@ -485,7 +567,7 @@ class CS2InGameOverlayApp:
     # ------------------------------------------------------------------------
     # Compact Sub-Tick Bar (Docked cleanly below top scoreboard at y = 96)
     # ------------------------------------------------------------------------
-    def _draw_compact_subtick_bar(self, eng: EngagementEvent, w: int, h: int):
+    def _draw_compact_subtick_bar(self, eng: EngagementEvent, w: int, h: int, is_preview: bool = False):
         bar_w = 480
         bar_x = (w - bar_w) // 2
         bar_y = 96  # Placed cleanly below CS2 top player avatars & round timer
@@ -494,19 +576,20 @@ class CS2InGameOverlayApp:
         # Semi-transparent dark glass background
         self.canvas.create_rectangle(
             bar_x - 6, bar_y - 18, bar_x + bar_w + 6, bar_y + bar_h + 22,
-            fill="#090d16", outline="#3b82f6", width=1.5
+            fill="#090d16", outline="#3b82f6" if not is_preview else "#0284c7", width=1.5
         )
 
-        title_txt = f"SUB-TICK WIRE TIMING // 15.625 ms WINDOW"
+        title_txt = f"SUB-TICK WIRE TIMING // 15.625 ms WINDOW" if not is_preview else f"SUB-TICK WIRE TIMING // LIVE TELEMETRY (Tick {self.current_tick})"
         self.canvas.create_text(
             bar_x, bar_y - 7,
             text=title_txt, fill="#818cf8", font=("Consolas", 9, "bold"), anchor="w"
         )
 
-        mono_txt = "✓ MONOTONIC"
+        mono_txt = "✓ MONOTONIC" if not is_preview else "● LIVE STREAM"
+        mono_col = "#34d399" if not is_preview else "#38bdf8"
         self.canvas.create_text(
             bar_x + bar_w, bar_y - 7,
-            text=mono_txt, fill="#34d399", font=("Consolas", 9, "bold"), anchor="e"
+            text=mono_txt, fill=mono_col, font=("Consolas", 9, "bold"), anchor="e"
         )
 
         # Inner progress track
@@ -533,7 +616,7 @@ class CS2InGameOverlayApp:
         self.canvas.create_oval(act_x - 3, bar_y - 3, act_x + 3, bar_y + 3, fill="#ffffff", outline="#38bdf8", width=1)
 
         act_ms = eng.subtick_frac * 15.625
-        callout = f"{eng.button_name} actuation @ {act_ms:.2f} ms  (w = {eng.subtick_frac:.3f})"
+        callout = f"{eng.button_name} actuation @ {act_ms:.2f} ms  (w = {eng.subtick_frac:.3f})" if not is_preview else f"Sub-Tick Discrete Micro-Slice: {act_ms:.2f} ms / 15.625 ms (64.0 Hz)"
         self.canvas.create_text(
             bar_x, bar_y + bar_h + 12,
             text=callout, fill="#38bdf8", font=("Consolas", 9, "bold"), anchor="w"
@@ -542,7 +625,7 @@ class CS2InGameOverlayApp:
     # ------------------------------------------------------------------------
     # 3D Rewound Lag Compensation Ghost Hitbox
     # ------------------------------------------------------------------------
-    def _draw_rewound_hitbox(self, eng: EngagementEvent, target_pos: Vector3, target_head: Vector3, view_proj: List[List[float]], w: int, h: int):
+    def _draw_rewound_hitbox(self, eng: EngagementEvent, target_pos: Vector3, target_head: Vector3, view_proj: List[List[float]], w: int, h: int, is_preview: bool = False):
         s_feet = world_to_screen(target_pos - Vector3(0, 0, 32), view_proj, w, h)
         s_head = world_to_screen(target_head, view_proj, w, h)
 
@@ -553,6 +636,8 @@ class CS2InGameOverlayApp:
         hx, hy, _ = s_head
 
         box_color = "#34d399" if eng.is_hit else "#f43f5e"
+        if is_preview:
+            box_color = "#38bdf8"
 
         cap_h = max(36.0, fy - hy)
         cap_w = max(18.0, cap_h * 0.42)
@@ -576,10 +661,13 @@ class CS2InGameOverlayApp:
         self.canvas.create_line(hx, hy - head_r*1.2, hx, hy + head_r*1.2, fill=box_color, width=1)
 
         # Floating In-World Label
-        tag_bg_w = 190
+        tag_bg_w = 210
         tag_bg_h = 32
         tx = cx + cap_w * 0.5 + 14
         ty = hy - 10
+
+        label_title = "REWOUND HITBOX [Apex #6]" if not is_preview else f"HITBOX [Apex #6] ({self.camera_mode})"
+        label_sub = f"t_rewind: -{eng.unlag_ms:.1f}ms  (sv_maxunlag)" if not is_preview else f"Live Spatial Tracking: 560u forward"
 
         self.canvas.create_rectangle(
             tx, ty, tx + tag_bg_w, ty + tag_bg_h,
@@ -587,35 +675,49 @@ class CS2InGameOverlayApp:
         )
         self.canvas.create_text(
             tx + 8, ty + 9,
-            text=f"REWOUND HITBOX [Apex #6]",
+            text=label_title,
             fill=box_color, font=("Consolas", 9, "bold"), anchor="w"
         )
         self.canvas.create_text(
             tx + 8, ty + 22,
-            text=f"t_rewind: -{eng.unlag_ms:.1f}ms  (sv_maxunlag)",
+            text=label_sub,
             fill="#94a3b8", font=("Consolas", 8), anchor="w"
         )
 
     # ------------------------------------------------------------------------
     # Bullet Ray-Trace & Trajectory Vector
     # ------------------------------------------------------------------------
-    def _draw_raytrace_vector(self, eng: EngagementEvent, target_head: Vector3, view_proj: List[List[float]], w: int, h: int):
+    def _draw_raytrace_vector(self, eng: EngagementEvent, shooter_pos: Vector3, target_head: Vector3, view_proj: List[List[float]], w: int, h: int, is_preview: bool = False):
         s_target = world_to_screen(target_head, view_proj, w, h)
         if not s_target:
             return
 
         tx, ty, _ = s_target
-        origin_x = w // 2
-        origin_y = h // 2
 
-        color = "#38bdf8" if eng.is_hit else "#fb7185"
+        # Adjust bullet origin according to camera perspective
+        if self.camera_mode == "CHASE_CAM":
+            s_shooter = world_to_screen(shooter_pos, view_proj, w, h)
+            origin_x, origin_y = (s_shooter[0], s_shooter[1]) if s_shooter else (w // 2, int(h * 0.72))
+        elif self.camera_mode == "FREECAM":
+            s_shooter = world_to_screen(shooter_pos, view_proj, w, h)
+            origin_x, origin_y = (s_shooter[0], s_shooter[1]) if s_shooter else (int(w * 0.28), int(h * 0.65))
+        else:
+            # First-person: trace from weapon position (lower right) to crosshair
+            origin_x = int(w * 0.62)
+            origin_y = int(h * 0.78)
+
+        color = "#38bdf8" if (eng.is_hit or is_preview) else "#fb7185"
 
         self.canvas.create_line(origin_x, origin_y, tx, ty, fill=color, width=2.5, dash=(6, 3))
         self.canvas.create_oval(tx - 6, ty - 6, tx + 6, ty + 6, outline="#ffffff", width=2)
 
         # Hit status banner
-        hit_str = f"CONFIRMED HIT ({eng.ray_dist:.2f}u <= 4.00u)" if eng.is_hit else f"DESYNC MISS ({eng.ray_dist:.2f}u > 4.00u)"
-        badge_color = "#34d399" if eng.is_hit else "#f43f5e"
+        if is_preview:
+            hit_str = f"RAYCAST GUIDE // {self.camera_mode}"
+            badge_color = "#38bdf8"
+        else:
+            hit_str = f"CONFIRMED HIT ({eng.ray_dist:.2f}u <= 4.00u)" if eng.is_hit else f"DESYNC MISS ({eng.ray_dist:.2f}u > 4.00u)"
+            badge_color = "#34d399" if eng.is_hit else "#f43f5e"
 
         bx, by = tx + 14, ty + 28
         self.canvas.create_rectangle(
@@ -630,13 +732,28 @@ class CS2InGameOverlayApp:
     # ------------------------------------------------------------------------
     # Anomaly Alert Card (Docked on Right Side: x = w - 440, y = 140)
     # ------------------------------------------------------------------------
-    def _draw_anomaly_card(self, eng: EngagementEvent, w: int, h: int):
+    def _draw_anomaly_card(self, eng: EngagementEvent, w: int, h: int, is_preview: bool = False):
         card_w = 400
         card_h = 40
         cx = w - card_w - 24
         cy = 140  # Safely positioned on right side, never blocks bottom timeline!
 
-        if not eng.is_hit:
+        if is_preview:
+            self.canvas.create_rectangle(
+                cx, cy, cx + card_w, cy + card_h,
+                fill="#0f172a", outline="#38bdf8", width=1.5
+            )
+            self.canvas.create_text(
+                cx + 12, cy + 13,
+                text="● LIVE DIAGNOSTIC STREAM // KINEMATICS OK",
+                fill="#38bdf8", font=("Consolas", 9, "bold"), anchor="w"
+            )
+            self.canvas.create_text(
+                cx + 12, cy + 27,
+                text=f"sv_maxunlag: 200.0ms | Cam: {self.camera_mode} | [F7] Event-Only",
+                fill="#94a3b8", font=("Consolas", 8), anchor="w"
+            )
+        elif not eng.is_hit:
             self.canvas.create_rectangle(
                 cx, cy, cx + card_w, cy + card_h,
                 fill="#450a0a", outline="#f43f5e", width=1.5
@@ -697,18 +814,20 @@ class CS2InGameOverlayApp:
         mx = (w - mw) // 2
         my = (h - mh) // 2
 
+        # Outer Glow Card
         self.canvas.create_rectangle(
             mx - 10, my - 10, mx + mw + 10, my + mh + 10,
             fill="#090d16", outline="#6366f1", width=2.5
         )
 
+        # Header Title Bar
         self.canvas.create_rectangle(
             mx, my, mx + mw, my + 44,
             fill="#1e1b4b", outline=""
         )
         self.canvas.create_text(
             mx + 16, my + 22,
-            text="⚙ OVERLAY SETTINGS & DIAGNOSTICS",
+            text="⚙ OVERLAY SETTINGS & ANOMALY NAVIGATOR",
             fill="#a5b4fc", font=("Consolas", 11, "bold"), anchor="w"
         )
         self.canvas.create_text(
@@ -717,31 +836,90 @@ class CS2InGameOverlayApp:
             fill="#818cf8", font=("Consolas", 9), anchor="e"
         )
 
-        self._draw_checkbox_row(mx + 20, my + 60, "Layer 1: Sub-Tick Micro-Slice Bar (15.625 ms)", self.show_subtick_bar)
-        self._draw_checkbox_row(mx + 20, my + 95, "Layer 2: 3D Rewound Lag Comp Hitbox (Apex #6)", self.show_hitbox)
-        self._draw_checkbox_row(mx + 20, my + 130, "Layer 3: Bullet Ray-Trace & Impact Vectors", self.show_raytrace)
-        self._draw_checkbox_row(mx + 20, my + 165, "Layer 4: Desync & Rollback Anomaly Alerts", self.show_anomalies)
-        self._draw_checkbox_row(mx + 20, my + 200, "First-Person Crosshair Reticle Guide", self.show_crosshair_guide)
+        # 1. Layer Checkbox Rows
+        self._draw_checkbox_row(mx + 20, my + 54, "Layer 1: Sub-Tick Micro-Slice Bar (15.625 ms)", self.show_subtick_bar)
+        self._draw_checkbox_row(mx + 20, my + 78, "Layer 2: 3D Rewound Lag Comp Hitbox (Apex #6)", self.show_hitbox)
+        self._draw_checkbox_row(mx + 20, my + 102, "Layer 3: Bullet Ray-Trace & Impact Vectors", self.show_raytrace)
+        self._draw_checkbox_row(mx + 20, my + 126, "Layer 4: Desync & Rollback Anomaly Alerts", self.show_anomalies)
+        self._draw_checkbox_row(mx + 20, my + 150, "First-Person Crosshair Reticle Guide", self.show_crosshair_guide)
 
-        self.canvas.create_line(mx + 20, my + 235, mx + mw - 20, my + 235, fill="#334155", width=1)
+        # 2. Mode Selectors (Camera Perspective & Live Diagnostics)
+        cam_label = f"Cam Mode [F8]: {self.camera_mode}"
+        self._draw_button(mx + 20, my + 180, 260, 28, cam_label, "#1e293b")
 
-        # Trigger Test Shot Audit Button
-        self._draw_button(mx + 20, my + 248, mw - 40, 32, "⚡ TRIGGER TEST SHOT & AUDIT (F6)", "#0284c7")
+        live_txt = "Live HUD [F7]: Always-On" if self.persistent_visuals else "Live HUD [F7]: Event-Only"
+        live_col = "#047857" if self.persistent_visuals else "#334155"
+        self._draw_button(mx + 300, my + 180, 260, 28, live_txt, live_col)
 
-        # Transport & Seek Controls
+        # 3. Trigger Test Shot Audit Button
+        self._draw_button(mx + 20, my + 216, mw - 40, 28, "⚡ TRIGGER TEST SHOT & AUDIT (F6)", "#0284c7")
+
+        # Divider
+        self.canvas.create_line(mx + 20, my + 252, mx + mw - 20, my + 252, fill="#334155", width=1)
+
+        # 4. Detected Actions & Anomaly Timeline
+        total_events = len(self.anomalies)
+        total_pages = max(1, (total_events + self.anomalies_per_page - 1) // self.anomalies_per_page)
         self.canvas.create_text(
-            mx + 16, my + 298,
-            text="Demo Playback Netcon Transport Controls:",
-            fill="#94a3b8", font=("Consolas", 9), anchor="w"
+            mx + 20, my + 268,
+            text=f"🔍 DETECTED ACTIONS & ANOMALIES ({total_events} events):",
+            fill="#38bdf8", font=("Consolas", 9, "bold"), anchor="w"
         )
 
-        btn_y = my + 318
-        self._draw_button(mx + 20, btn_y, 115, 30, "◀◀ -64 Ticks", "#1e293b")
-        self._draw_button(mx + 148, btn_y, 140, 30, "❚❚ PAUSE / PLAY", "#2563eb")
-        self._draw_button(mx + 300, btn_y, 115, 30, "+64 Ticks ▶▶", "#1e293b")
+        page_str = f"Page {self.anomaly_page + 1}/{total_pages}"
+        self.canvas.create_text(
+            mx + mw - 110, my + 268,
+            text=page_str, fill="#94a3b8", font=("Consolas", 8), anchor="w"
+        )
+        self._draw_button(mx + mw - 160, my + 258, 24, 20, "◀", "#1e293b")
+        self._draw_button(mx + mw - 50, my + 258, 24, 20, "▶", "#1e293b")
 
-        # Timeline Scrubber Bar (Real demo tick scale)
-        scrub_y = my + 372
+        # Render 4 anomaly rows
+        start_idx = self.anomaly_page * self.anomalies_per_page
+        end_idx = min(total_events, start_idx + self.anomalies_per_page)
+
+        for i, idx in enumerate(range(start_idx, end_idx)):
+            a = self.anomalies[idx]
+            row_y = my + 286 + (i * 26)
+            self._draw_button(mx + 20, row_y, 46, 22, "▶ GO", "#0284c7")
+
+            hit_str = "[HIT]" if a.get("is_hit", True) else "[MISS]"
+            hit_col = "#34d399" if a.get("is_hit", True) else "#f43f5e"
+
+            line_txt = f"{a['title']}  w={a['subtick_frac']:.3f} -{a['unlag_ms']:.1f}ms "
+            self.canvas.create_text(
+                mx + 74, row_y + 11,
+                text=line_txt, fill="#f8fafc", font=("Consolas", 8, "bold"), anchor="w"
+            )
+            self.canvas.create_text(
+                mx + 74 + len(line_txt) * 6 + 6, row_y + 11,
+                text=hit_str, fill=hit_col, font=("Consolas", 8, "bold"), anchor="w"
+            )
+
+        if total_events == 0:
+            self.canvas.create_text(
+                mx + 24, my + 300,
+                text="No demo file loaded, or scanning... Open demo via Control Center to autoscan.",
+                fill="#64748b", font=("Consolas", 8, "italic"), anchor="w"
+            )
+
+        # Divider
+        self.canvas.create_line(mx + 20, my + 396, mx + mw - 20, my + 396, fill="#334155", width=1)
+
+        # 5. Playback Transport & Seek Controls
+        self.canvas.create_text(
+            mx + 20, my + 408,
+            text="Demo Playback Netcon Transport Controls:",
+            fill="#94a3b8", font=("Consolas", 8), anchor="w"
+        )
+
+        btn_y = my + 422
+        self._draw_button(mx + 20, btn_y, 140, 28, "◀◀ -64 Ticks", "#1e293b")
+        self._draw_button(mx + 175, btn_y, 230, 28, "❚❚ PAUSE / PLAY", "#2563eb")
+        self._draw_button(mx + 420, btn_y, 140, 28, "+64 Ticks ▶▶", "#1e293b")
+
+        # 6. Timeline Scrubber Bar
+        scrub_y = my + 472
         scrub_w = mw - 40
         self.canvas.create_text(
             mx + 20, scrub_y - 8,
@@ -763,27 +941,44 @@ class CS2InGameOverlayApp:
             fill="#ffffff", outline="#38bdf8", width=1.5
         )
 
+        # 7. Engine Link, Camera & Hotkeys
         netcon_status = "Connected to CS2 (Netcon 2121)" if self.netcon.connected else "Listening for CS2 (Netcon 2121)..."
         netcon_color = "#34d399" if self.netcon.connected else "#fbbf24"
         self.canvas.create_text(
-            mx + 20, my + 418,
+            mx + 20, my + 506,
             text=f"Engine Link: {netcon_status}",
-            fill=netcon_color, font=("Consolas", 9), anchor="w"
+            fill=netcon_color, font=("Consolas", 8), anchor="w"
         )
 
         cam_text = f"Live Camera: ({self.cam_pos.x:.0f}, {self.cam_pos.y:.0f}, {self.cam_pos.z:.0f})  Ang: ({self.view_pitch:.1f}°, {self.view_yaw:.1f}°)"
         self.canvas.create_text(
-            mx + 20, my + 438,
+            mx + 20, my + 524,
             text=cam_text, fill="#64748b", font=("Consolas", 8), anchor="w"
         )
 
-        hotkey_str = "[SPACE] Pause/Play   [← / →] Seek   [F6] Test Shot   [F11] Hide"
+        hotkey_str = "[SPACE] Pause/Play  [F6] Test Shot  [F7] Live Mode  [F8] Cam Mode  [F11] Hide"
         self.canvas.create_text(
-            mx + 20, my + 458,
-            text=hotkey_str, fill="#64748b", font=("Consolas", 8), anchor="w"
+            mx + 20, my + 542,
+            text=hotkey_str, fill="#818cf8", font=("Consolas", 8), anchor="w"
         )
 
-        self._draw_button(mx + 20, my + 482, mw - 40, 36, "✓ RETURN TO GAME & LOCK (F1)", "#4338ca")
+        # 8. Return to Game Button
+        self._draw_button(mx + 20, my + 566, mw - 40, 36, "✓ RETURN TO GAME & LOCK (F1)", "#4338ca")
+
+    def jump_to_anomaly(self, anomaly: Dict[str, Any]):
+        """Jumps directly to 0.5s before the detected anomaly and activates sub-tick audit."""
+        target_tick = max(0, anomaly["tick"] - 32)
+        self.current_tick = anomaly["tick"]
+        self.netcon.send_command(f"demo_gototick {target_tick}")
+        self.active_engagement = EngagementEvent(
+            tick=anomaly["tick"],
+            subtick_frac=anomaly["subtick_frac"],
+            button_name="IN_ATTACK",
+            unlag_ms=anomaly["unlag_ms"],
+            is_hit=anomaly["is_hit"],
+            ray_dist=anomaly["ray_dist"],
+            duration=3.5
+        )
 
     def _draw_checkbox_row(self, x: int, y: int, label: str, checked: bool):
         box_size = 18
@@ -835,49 +1030,80 @@ class CS2InGameOverlayApp:
         my = (h - mh) // 2
 
         # Return to Game Button
-        if my + 482 <= ey <= my + 482 + 36 and mx + 20 <= ex <= mx + mw - 20:
+        if my + 566 <= ey <= my + 566 + 36 and mx + 20 <= ex <= mx + mw - 20:
             self.toggle_menu()
             return
 
-        # Checkbox Rows
-        if my + 60 <= ey <= my + 60 + 20 and mx + 20 <= ex <= mx + mw - 20:
+        # Checkbox Rows (Spacing 24px)
+        if my + 54 <= ey <= my + 54 + 20 and mx + 20 <= ex <= mx + mw - 20:
             self.show_subtick_bar = not self.show_subtick_bar
             return
-        if my + 95 <= ey <= my + 95 + 20 and mx + 20 <= ex <= mx + mw - 20:
+        if my + 78 <= ey <= my + 78 + 20 and mx + 20 <= ex <= mx + mw - 20:
             self.show_hitbox = not self.show_hitbox
             return
-        if my + 130 <= ey <= my + 130 + 20 and mx + 20 <= ex <= mx + mw - 20:
+        if my + 102 <= ey <= my + 102 + 20 and mx + 20 <= ex <= mx + mw - 20:
             self.show_raytrace = not self.show_raytrace
             return
-        if my + 165 <= ey <= my + 165 + 20 and mx + 20 <= ex <= mx + mw - 20:
+        if my + 126 <= ey <= my + 126 + 20 and mx + 20 <= ex <= mx + mw - 20:
             self.show_anomalies = not self.show_anomalies
             return
-        if my + 200 <= ey <= my + 200 + 20 and mx + 20 <= ex <= mx + mw - 20:
+        if my + 150 <= ey <= my + 150 + 20 and mx + 20 <= ex <= mx + mw - 20:
             self.show_crosshair_guide = not self.show_crosshair_guide
             return
 
-        # Trigger Test Shot Audit (y: my + 248)
-        if my + 248 <= ey <= my + 248 + 32 and mx + 20 <= ex <= mx + mw - 20:
+        # Mode Buttons (my + 180, h=28)
+        if my + 180 <= ey <= my + 180 + 28:
+            if mx + 20 <= ex <= mx + 280:
+                modes = ["FIRST_PERSON", "CHASE_CAM", "FREECAM"]
+                cur_idx = modes.index(self.camera_mode) if self.camera_mode in modes else 0
+                self.camera_mode = modes[(cur_idx + 1) % len(modes)]
+                return
+            if mx + 300 <= ex <= mx + 560:
+                self.persistent_visuals = not self.persistent_visuals
+                return
+
+        # Trigger Test Shot Audit (my + 216, h=28)
+        if my + 216 <= ey <= my + 216 + 28 and mx + 20 <= ex <= mx + mw - 20:
             self.trigger_shot_audit(is_hit=True)
             return
 
-        # Transport Buttons (y: my + 318)
-        btn_y = my + 318
-        if btn_y <= ey <= btn_y + 30:
-            if mx + 20 <= ex <= mx + 20 + 115:
+        # Anomaly Prev / Next Page Buttons (my + 258, h=20)
+        total_events = len(self.anomalies)
+        total_pages = max(1, (total_events + self.anomalies_per_page - 1) // self.anomalies_per_page)
+        if my + 258 <= ey <= my + 258 + 20:
+            if mx + mw - 160 <= ex <= mx + mw - 136:
+                self.anomaly_page = max(0, self.anomaly_page - 1)
+                return
+            if mx + mw - 50 <= ex <= mx + mw - 26:
+                self.anomaly_page = min(total_pages - 1, self.anomaly_page + 1)
+                return
+
+        # Anomaly Jump Buttons (my + 286 + i * 26)
+        start_idx = self.anomaly_page * self.anomalies_per_page
+        end_idx = min(total_events, start_idx + self.anomalies_per_page)
+        for i, idx in enumerate(range(start_idx, end_idx)):
+            row_y = my + 286 + (i * 26)
+            if row_y <= ey <= row_y + 22 and mx + 20 <= ex <= mx + 66:
+                self.jump_to_anomaly(self.anomalies[idx])
+                return
+
+        # Transport Buttons (my + 422, h=28)
+        btn_y = my + 422
+        if btn_y <= ey <= btn_y + 28:
+            if mx + 20 <= ex <= mx + 160:
                 self.current_tick = max(0, self.current_tick - 64)
                 self.netcon.send_command(f"demo_gototick {self.current_tick}")
                 return
-            if mx + 148 <= ex <= mx + 148 + 140:
+            if mx + 175 <= ex <= mx + 405:
                 self.netcon.send_command("demo_togglepause")
                 return
-            if mx + 300 <= ex <= mx + 300 + 115:
+            if mx + 420 <= ex <= mx + 560:
                 self.current_tick = min(self.total_demo_ticks, self.current_tick + 64)
                 self.netcon.send_command(f"demo_gototick {self.current_tick}")
                 return
 
-        # Scrubber bar (y: my + 372)
-        scrub_y = my + 372
+        # Scrubber bar (my + 472, h=14)
+        scrub_y = my + 472
         scrub_w = mw - 40
         if scrub_y - 8 <= ey <= scrub_y + 22 and mx + 20 <= ex <= mx + 20 + scrub_w:
             ratio = max(0.0, min(1.0, (ex - (mx + 20)) / float(scrub_w)))

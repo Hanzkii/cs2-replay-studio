@@ -1,11 +1,11 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title CS2 Sub-Tick Replay Studio // Control Center
+title CS2 Replay Studio // Control Center
 color 0B
 
 echo ==============================================================================
-echo   COUNTER-STRIKE 2: SUB-TICK REPLAY STUDIO // CONTROL CENTER
+echo   COUNTER-STRIKE 2: REPLAY STUDIO // CONTROL CENTER
 echo ==============================================================================
 echo.
 echo Starting Desktop GUI Control Center...

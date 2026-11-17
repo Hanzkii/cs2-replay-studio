@@ -1,11 +1,11 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title CS2 Sub-Tick Replay Studio
+title CS2 Replay Studio
 color 0B
 
 echo ==============================================================================
-echo   COUNTER-STRIKE 2: SUB-TICK REPLAY STUDIO
+echo   COUNTER-STRIKE 2: REPLAY STUDIO
 echo ==============================================================================
 echo.
 

@@ -1,66 +1,104 @@
-# Counter-Strike 2 Sub-Tick Replay & Anomaly Studio
+# Counter-Strike 2 Replay Studio
 
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows&logoColor=white)](https://microsoft.com)
-[![Protocol](https://img.shields.io/badge/Wire-PBDEMS2%20(64.0%20Hz)-6366F1)](https://github.com/Hanzkii/cs2-replay-overlay)
+[![Protocol](https://img.shields.io/badge/Wire-PBDEMS2%20(64.0%20Hz)-6366F1)](https://github.com/Hanzkii/cs2-replay-studio)
 [![Engine](https://img.shields.io/badge/Engine-Source%202%20Netcon-FF4500)](https://developer.valvesoftware.com)
-[![Dependencies](https://img.shields.io/badge/Dependencies-Zero%20pip%20installs-10B981)](#system-requirements)
+[![Dependencies](https://img.shields.io/badge/Dependencies-demoparser2-10B981)](#system-requirements)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An intuitive, dark-themed native desktop replay studio, combat investigator, and automated anti-cheat diagnostic station for **Counter-Strike 2** match recordings (`.dem`).
+An intuitive, dark-themed native desktop replay studio, combat investigator, and match companion for **Counter-Strike 2** match recordings (`.dem`).
 
-Features automated full-match bitstream parsing, 3D spatial raycast crosshair alignment audits, aimbot headshot snap detection ($\Delta \theta_{\text{offset}} < 0.85^\circ$), and **1-click Netcon engine synchronization** that instantly seeks CS2 to the exact anomaly moment while spectating the suspect in first person.
-
-See [ROADMAP.md](ROADMAP.md) for the active development roadmap expanding the studio into a complete match companion (Anti-Cheat Audit + Match Highlights + Performance/Duel Coaching).
+Powered by high-precision Source 2 demo parsing (`demoparser2`), 3D spatial raycast crosshair alignment algorithms, aimbot headshot snap verification, and **1-click Netcon engine synchronization** that instantly seeks CS2 to the exact moment in 1st person with configurable lead-up and slow motion.
 
 ---
 
 ## Core Capabilities
 
-### 1. Automated Anti-Cheat & Anomaly Engine
-- **Aimbot Snap Velocity Scanner**: Scans player viewangles between ticks. Automatically detects and flags angular delta spikes ($\Delta \theta > 35^\circ/\text{tick}$) with high instantaneous deceleration characteristic of silent aim and robotic crosshair locking.
-- **Sub-Tick Triggerbot Cluster Audit**: Evaluates actuation timing offsets $w \in [0.0, 1.0)$ ($0.0\text{ ms} \dots 15.625\text{ ms}$). Flags inhuman clustering patterns ($\sigma < 0.8\text{ ms}$) and reaction latencies $< 50\text{ ms}$.
-- **Lag Compensation Desync & Backtrack Analysis**: Identifies hit registration events where victim interpolation rollback exceeded standard limits ($> 100\text{ ms}$) or bullet raycast distance delta exceeded bounding box margins ($> 4.0\text{ u}$).
-- **Rapid Fire Command Injection**: Audits sub-tick packet queues for cyclic weapon cooldown violations.
+### 1. 3D Spatial Raycast & Combat Anomaly Engine
+- **Mathematical Aim Snap Detection**: Evaluates the shooter's exact eye position $\vec{P}_{\text{shooter}} = (x_s, y_s, z_s + 64.0\text{ u})$ and view direction vector $\vec{v} = (\cos(p)\cos(y), \cos(p)\sin(y), -\sin(p))$ against the victim's 3D hitbox centroid $\vec{P}_{\text{victim}}$.
+- **Angular Crosshair Error Calculation**: Computes the exact angular offset $\theta_{\text{offset}} = \arccos(\vec{v} \cdot \vec{d})$ and perpendicular ray-to-target distance $\Delta r = \|\vec{\Delta} \times \vec{v}\|$.
+- **Eliminates False Positives**:
+  - **Aimbot Snaps (`CRITICAL`)**: Crosshair locked onto the head bone ($\theta_{\text{offset}} \le 0.85^\circ$, $\Delta r < 15.0\text{ u}$).
+  - **Suspicious Hits (`SUSPICIOUS`)**: Tight angular raycast alignments ($\theta_{\text{offset}} < 1.50^\circ$).
+  - **Combat Frags (`INFO`)**: Filterable spray transfers, body hits, and standard weapon eliminations.
 
 ### 2. 1-Click Netcon Engine Synchronization (`-netconport 2121`)
-- **Direct Engine Seeking**: Click `[▶ Jump to Event & Spectate in CS2]` on any flagged anomaly or combat kill. The studio dispatches `demo_gototick <tick - 32>` (half-second pre-roll) and locks camera focus via `spec_player "<suspect>"`.
-- **Integrated Transport Controller**: Full play/pause toggling (`demo_togglepause`), seek $\pm 64$ ticks, step rounds, and speed presets ($0.25\times, 0.5\times, 1.0\times, 2.0\times$).
-- **Anti-Cheat Debug Overlays**: Toggle in-engine lag compensation hitboxes (`sv_showlagcompensation 1`), bullet impacts (`sv_showimpacts 1`), and wireframe models (`r_drawothermodels 2`) directly from the studio.
+- **Direct Engine Seeking**: Clicking any event row in the table automatically:
+  - Seeks CS2 demo playback to **1.5 seconds before the action** (`lead_tick = tick - 96`).
+  - Sets **First-Person Spectator Mode** (`spec_mode 1`).
+  - Locks the camera onto the shooter (`spec_player "<suspect>"`).
+  - Slows playback down to **$0.25\times$ speed** (`demo_timescale 0.25`) with background reinforcement to prevent camera reset.
+- **Integrated Transport Controller**: Play/pause toggling (`demo_togglepause`), seek $\pm 64$ ticks, step rounds, speed presets ($0.25\times, 0.5\times, 1.0\times, 2.0\times$), and 1st-person camera lock.
+- **In-Engine Debug Overlays**: Toggle lag compensation bounding boxes (`sv_showlagcompensation 1`) and bullet impacts (`sv_showimpacts 1`) directly from the studio.
 
-### 3. Interactive Visual Scrubber & Telemetry Graphing
-- **Full-Match Timeline Scrubber**: Displays round markers, kill pips, damage hits, and flagged anomaly pins across the match length ($0 \dots N$ ticks). Click or drag anywhere to seek in real-time.
-- **Sub-Tick Micro-Slice Visualizer**: Graphs attack actuation timestamps across the $15.625\text{ ms}$ discrete tick window, separating normal Gaussian human click distributions from machine triggerbot clusters.
-- **Angular Velocity Spike Plot**: Plots viewangle angular velocity ($\Delta \theta/\text{tick}$) over time for any selected player.
+### 3. Interactive Visual Scrubber & Filtering
+- **Full-Match Timeline Scrubber**: Displays round markers, kill pips, and anomaly pins across the match length ($0 \dots N$ ticks). Click anywhere to seek in real-time.
+- **Multi-Vector Filtering**: Filter events by Suspect/Player, Category (`AIMBOT_SNAP`, `SUSPICIOUS_HIT`, `COMBAT_KILL`), Severity (`CRITICAL`, `SUSPICIOUS`, `INFO`), or search query.
+
+---
+
+## Development Roadmap: Unified Match Companion
+
+The project is evolving from a pure anti-cheat auditor into a comprehensive **Match Companion** covering three core domains:
+
+```
+                               ┌────────────────────────────────────────────────────────┐
+                               │                 CS2 Replay Studio                      │
+                               └──────────────────────────┬─────────────────────────────┘
+                                                          │
+                    ┌─────────────────────────────────────┼────────────────────────────────────┐
+                    ▼                                     ▼                                    ▼
+       ┌────────────────────────┐            ┌────────────────────────┐           ┌────────────────────────┐
+       │  🛡️ Mode 1: Audit      │            │  🌟 Mode 2: Highlights │           │  🎯 Mode 3: Duels      │
+       │  Anti-Cheat & Suspect  │            │  Frag Reel & Clutches  │           │  Coaching & Entry Frag │
+       └────────────┬───────────┘            └────────────┬───────────┘           └────────────┬───────────┘
+                    │                                     │                                    │
+                    ▼                                     ▼                                    ▼
+       • 3D Raycast Aimbot Snaps             • Aces (5K) & Multi-Kills (3K/4K)    • Opening Duels (First K/D)
+       • Wallhack/ESP Pre-Aim Tracking       • Sniper Noscopes & Air Shots        • Trade Frag Efficiency (< 3s)
+       • Inhuman Reaction Triggers (<80ms)   • 1vX Clutch Round Wins              • Crosshair Placement Rating
+       • Through-Smoke Radar Verifications   • Collaterals & Wallbang Highlights  • First-Bullet Accuracy Stats
+```
+
+See [ROADMAP.md](ROADMAP.md) for the detailed phase breakdown and feature specifications.
 
 ---
 
 ## Quickstart
 
-### Method 1: Desktop Control Center (Recommended)
-Double-click **`LAUNCH_CONTROL_CENTER.bat`** (or `launcher.pyw`):
-1. Click **`📁 Browse .dem File...`** to pick any match replay (or drag and drop `.dem`).
-2. The studio automatically parses match metadata, player rosters, and flags all anomalies in $< 1.0$ second.
-3. Click **`▶ LAUNCH CS2 & SYNC`** to start Counter-Strike 2 in Borderless Windowed mode with Netcon enabled.
-4. Browse the **Anomaly Table**, select any suspicious action, and click **`▶ JUMP TO EVENT`** to inspect the play in CS2.
+### 1. Installation
+Clone the repository and install dependencies:
+```bash
+git clone https://github.com/Hanzkii/cs2-replay-studio.git
+cd cs2-replay-studio
+pip install -r requirements.txt
+```
 
-### Method 2: Instant Desktop Shortcut
-Click **`📌 Desktop Icon`** inside the studio header to generate a native Windows desktop shortcut (`CS2 Replay Studio.lnk`) pointing directly to `pythonw launcher.pyw` for 1-click launching without batch consoles.
+### 2. Launching the Studio
+Double-click **`LAUNCH_CONTROL_CENTER.bat`** (or `launcher.pyw`):
+1. Click **`📁 Browse .dem File...`** to load any CS2 match replay (`.dem`).
+2. Click **`▶ LAUNCH CS2 & SYNC`** to start Counter-Strike 2 in Borderless Windowed mode with Netcon enabled.
+3. Browse the **Combat & Anomaly Table**, click any event row, and CS2 will automatically jump to 1.5s before the shot in slow motion.
+
+### 3. Desktop Shortcut
+Click **`📌 Desktop Icon`** inside the studio header to generate a native Windows desktop shortcut (`CS2 Replay Studio.lnk`) for 1-click launching.
 
 ---
 
 ## Project Architecture
 
 ```
-cs2-replay-overlay/
-├── launcher.py               # Desktop GUI Replay Studio & Anomaly Inspector (Tkinter)
+cs2-replay-studio/
+├── launcher.py               # Desktop GUI Replay Studio & Anomaly Navigator (Tkinter)
 ├── launcher.pyw              # Windowless direct launch entrypoint
-├── demo_parser.py            # Pure Python PBDEMS2 container, Snappy codec & Anomaly Engine
-├── engine_link.py            # Steam/CS2 auto-discovery & Netcon TCP console client
-├── LAUNCH_CONTROL_CENTER.bat # 1-click launcher for the desktop GUI
-├── DRAG_AND_DROP_DEMO_HERE.bat # 1-click drag & drop batch runner
+├── demo_parser.py            # 3D spatial raycast math & Source 2 demoparser2 event engine
+├── engine_link.py            # Steam/CS2 auto-discovery & Netcon TCP socket client
+├── LAUNCH_CONTROL_CENTER.bat # 1-click desktop batch launcher
+├── DRAG_AND_DROP_DEMO_HERE.bat # Drag-and-drop batch runner
+├── ROADMAP.md                # Development roadmap for match companion phases
+├── requirements.txt          # Python dependencies (demoparser2, polars, pyarrow)
 ├── version.json              # Version metadata and update tracking
-├── requirements.txt          # Zero pip dependencies documentation
 └── README.md                 # Complete documentation & usage guide
 ```
 
@@ -69,6 +107,13 @@ cs2-replay-overlay/
 ## System Requirements
 
 - **Operating System**: Windows 10 or Windows 11 (64-bit)
-- **Python**: Python 3.8 or newer (Standard installation with Tkinter enabled)
+- **Python**: Python 3.8 or newer (Standard installation or WindowsApps with Tkinter enabled)
 - **Game**: Counter-Strike 2 installed via Steam
-- **Dependencies**: **Zero third-party pip dependencies** (Pure Python standard library)
+- **Dependencies**: `demoparser2`, `polars`, `pyarrow`, `pandas` (see `requirements.txt`)
+
+---
+
+## Security & Fair Play Standards
+
+- **Static Replay Analysis Only**: All analysis is performed offline directly on recorded demo files (`.dem`).
+- **Standard Netcon TCP Protocol**: In-engine seeking communicates strictly via Valve's documented developer console loopback interface (`-netconport`). Zero DLL injection, dynamic memory reading/writing, or live process tampering.

@@ -1091,8 +1091,8 @@ oLink.Save
     def check_and_install_updates(self, silent_if_latest: bool = False):
         def _worker():
             self.log("Connecting to GitHub to verify version...")
-            api_url = "https://api.github.com/repos/Hanzkii/cs2-replay-overlay/commits/main"
-            zip_url = "https://github.com/Hanzkii/cs2-replay-overlay/archive/refs/heads/main.zip"
+            api_url = "https://api.github.com/repos/Hanzkii/cs2-replay-studio/commits/main"
+            zip_url = "https://github.com/Hanzkii/cs2-replay-studio/archive/refs/heads/main.zip"
             headers = {"User-Agent": "CS2-Replay-Studio-Client"}
 
             try:

@@ -1,0 +1,5 @@
+{
+  "version": "1.2.0",
+  "commit_sha": "1fee44c",
+  "commit_msg": "fix(updater): check local commit SHA against remote before updating to avoid redundant downloads"
+}

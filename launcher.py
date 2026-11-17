@@ -56,6 +56,8 @@ class ReplayStudioLauncherApp:
         self.root.config(bg=self.bg_dark)
 
         # State Variables
+        self.app_dir = os.path.dirname(os.path.abspath(__file__))
+        self.local_version = self._load_local_version()
         self.selected_demo_path: Optional[str] = None
         self.demo_info: Dict[str, Any] = {}
         self.cs2_exe: Optional[str] = None
@@ -117,7 +119,16 @@ class ReplayStudioLauncherApp:
             bg="#2e1065",
             padx=8, pady=2
         )
-        badge_lbl.pack(side="left", padx=12)
+        badge_lbl.pack(side="left", padx=(12, 6))
+
+        ver_lbl = tk.Label(
+            header,
+            text=f"build {self.local_version.get('commit_sha', '0cd56d7')[:7]}",
+            font=("Consolas", 8),
+            fg="#64748b",
+            bg="#0d1117"
+        )
+        ver_lbl.pack(side="left")
 
         status_txt = "CS2 Ready" if self.cs2_exe else "CS2 Not Found"
         status_col = self.accent_emerald if self.cs2_exe else self.accent_coral
@@ -613,8 +624,26 @@ oLink.Save
             self.log(f"Failed to create desktop shortcut: {e}")
             messagebox.showerror("Shortcut Error", f"Failed to create desktop shortcut:\n{e}")
 
+    def _load_local_version(self) -> Dict[str, Any]:
+        """Loads the current local build version and commit hash."""
+        v_file = os.path.join(self.app_dir, "version.json")
+        if os.path.exists(v_file):
+            try:
+                with open(v_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        # Fallback to git rev-parse if available in repo
+        try:
+            res = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=self.app_dir, capture_output=True, text=True, timeout=2)
+            if res.returncode == 0 and res.stdout.strip():
+                return {"commit_sha": res.stdout.strip(), "version": "1.2.0"}
+        except Exception:
+            pass
+        return {"commit_sha": "0cd56d7", "version": "1.2.0"}
+
     def check_and_install_updates(self, silent_if_latest: bool = False):
-        """Checks GitHub repository for updates and installs them in-place."""
+        """Checks GitHub repository for updates and installs them only when a newer version exists."""
         def _worker():
             self.log("Connecting to GitHub to check for updates...")
             api_url = "https://api.github.com/repos/Hanzkii/cs2-replay-overlay/commits/main"
@@ -626,18 +655,49 @@ oLink.Save
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     commit_data = json.loads(resp.read().decode("utf-8"))
 
-                latest_sha = commit_data.get("sha", "")[:7]
+                remote_sha = commit_data.get("sha", "").strip()
+                remote_sha_short = remote_sha[:7]
                 commit_msg = commit_data.get("commit", {}).get("message", "").split("\n")[0]
-                self.log(f"Latest repository version: {latest_sha} ('{commit_msg}')")
+
+                # Check current local version
+                local_info = self._load_local_version()
+                local_sha = local_info.get("commit_sha", "").strip()
+
+                # If already up to date, inform the user and abort download
+                if local_sha and (remote_sha.startswith(local_sha) or local_sha.startswith(remote_sha_short)):
+                    self.log(f"CS2 Replay Studio is already up to date (version {remote_sha_short}: '{commit_msg}').")
+                    if not silent_if_latest:
+                        messagebox.showinfo(
+                            "Already Up to Date",
+                            f"CS2 Replay Studio is already up to date!\n\n"
+                            f"Current Version: {remote_sha_short}\n"
+                            f"Latest Commit: {commit_msg}\n\n"
+                            f"No updates are needed."
+                        )
+                    return
+
+                # Newer version detected
+                self.log(f"New update available: {local_sha[:7] or 'Unknown'} -> {remote_sha_short} ('{commit_msg}')")
+
+                if not messagebox.askyesno(
+                    "Update Available",
+                    f"A new update is available!\n\n"
+                    f"Current Version: {local_sha[:7] or 'Unknown'}\n"
+                    f"Latest Version:  {remote_sha_short}\n\n"
+                    f"Release Notes: {commit_msg}\n\n"
+                    f"Do you want to download and install this update now?"
+                ):
+                    self.log("Update postponed by user.")
+                    return
 
                 # Download repository archive
-                self.log("Downloading codebase update archive from GitHub...")
+                self.log(f"Downloading update {remote_sha_short} from GitHub...")
                 req_zip = urllib.request.Request(zip_url, headers=headers)
                 with urllib.request.urlopen(req_zip, timeout=20) as resp:
                     zip_data = resp.read()
 
                 # Extract over current directory
-                app_dir = os.path.dirname(os.path.abspath(__file__))
+                app_dir = self.app_dir
                 updated_count = 0
                 with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
                     for name in zf.namelist():
@@ -652,17 +712,29 @@ oLink.Save
                                 f_out.write(zf.read(name))
                             updated_count += 1
 
+                # Save new version.json locally
+                new_version = {
+                    "version": "1.2.0",
+                    "commit_sha": remote_sha_short,
+                    "commit_msg": commit_msg,
+                    "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+                v_file = os.path.join(app_dir, "version.json")
+                with open(v_file, "w", encoding="utf-8") as f:
+                    json.dump(new_version, f, indent=2)
+                self.local_version = new_version
+
                 # Clean cache
                 pycache = os.path.join(app_dir, "__pycache__")
                 if os.path.exists(pycache):
                     shutil.rmtree(pycache, ignore_errors=True)
 
-                self.log(f"Successfully updated {updated_count} files to commit {latest_sha}!")
+                self.log(f"Successfully updated {updated_count} files to version {remote_sha_short}!")
 
                 if messagebox.askyesno(
-                    "Update Successful",
-                    f"CS2 Replay Studio has been updated to commit {latest_sha}!\n\n"
-                    f"Changes: {commit_msg}\n\n"
+                    "Update Complete",
+                    f"CS2 Replay Studio successfully updated to version {remote_sha_short}!\n\n"
+                    f"Commit: {commit_msg}\n\n"
                     f"Do you want to restart the application now?"
                 ):
                     self._restart_launcher()

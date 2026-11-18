@@ -37,6 +37,12 @@
   - Forward view vector $\vec{v} = (\cos(p)\cos(y), \cos(p)\sin(y), -\sin(p))$.
   - Angular alignment error $\theta_{\text{offset}} = \arccos(\vec{v} \cdot \vec{d})$.
   - True snap detection threshold: $\theta_{\text{offset}} < 0.85^\circ$ with perpendicular ray distance $\Delta r < 15.0\text{ u}$.
+- [ ] **Match Integrity & Outlier Threat Assessment Banner**:
+  - Automatically evaluate anomaly concentration across all match players upon demo ingestion.
+  - **Single Suspect Outlier Detection**: Statistically flag when an isolated player accounts for the vast majority of critical aimbot snaps (e.g. $\ge 60\%$ concentration or $\ge 3\times$ the runner-up) while other players exhibit standard human distributions.
+  - **Dynamic Banner Readout**: Prominent status indicator above the table (`🚨 PRIME SUSPECT OUTLIER: [Player] (X Snaps)` vs `✅ INTEGRITY NOMINAL: Normal match spread`).
+  - **1-Click Suspect Isolation**: One-click action button (`[ 🎯 Audit Suspect ]`) that instantly filters the timeline and event table directly to that player's engagements.
+  - **Dropdown Threat Badging**: Annotate the suspect dropdown with per-player snap counts (e.g. `PlayerName (X snaps)`).
 - [ ] **Wallhack / ESP Crosshair Tracking**:
   - Detect continuous angular tracking of enemy origin vectors behind opaque brush/model geometry before line-of-sight is established.
   - Flag suspicious pre-aim locking prior to corner emergence.

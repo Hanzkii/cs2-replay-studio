@@ -1,5 +1,6 @@
 {
-  "version": "1.9.1",
-  "commit_sha": "be5b1bb",
-  "commit_msg": "chore: remove unused panorama directory"
+  "version": "1.9.2",
+  "project": "cs2-replay-studio",
+  "updated": "2026-11-18",
+  "build": "26598758"
 }

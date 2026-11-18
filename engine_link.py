@@ -81,6 +81,16 @@ class CS2Locator:
 class CS2NetconClient:
     """Non-blocking TCP socket client for CS2 console communication."""
 
+    @staticmethod
+    def is_cs2_process_running() -> bool:
+        """Checks if cs2.exe is currently active in the Windows process list."""
+        try:
+            cmd = 'tasklist /FI "IMAGENAME eq cs2.exe" /NH'
+            out = subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.DEVNULL)
+            return "cs2.exe" in out.lower()
+        except Exception:
+            return False
+
     def __init__(self, port: int = 2121, host: str = "127.0.0.1"):
         self.host = host
         self.port = port
@@ -94,13 +104,13 @@ class CS2NetconClient:
             if self.connected and self.sock:
                 return True
             now = time.time()
-            if now - self.last_attempt_time < 0.8:
+            if now - self.last_attempt_time < 0.6:
                 return self.connected
             self.last_attempt_time = now
 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.3)
+                s.settimeout(0.35)
                 s.connect((self.host, self.port))
                 s.setblocking(False)
                 self.sock = s
@@ -108,6 +118,11 @@ class CS2NetconClient:
                 return True
             except Exception:
                 self.connected = False
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except Exception:
+                        pass
                 self.sock = None
                 return False
 
@@ -116,17 +131,28 @@ class CS2NetconClient:
             if not self.connected or not self.sock:
                 return False
             try:
-                # Non-destructive MSG_PEEK to detect if CS2 disconnected
-                data = self.sock.recv(16, socket.MSG_PEEK)
-                if data == b"":
-                    self.connected = False
-                    self.sock = None
-                    return False
+                # Drain incoming console buffer in non-blocking mode to keep link responsive
+                while True:
+                    data = self.sock.recv(4096)
+                    if data == b"":
+                        # Clean socket closure by remote engine
+                        self.connected = False
+                        try:
+                            self.sock.close()
+                        except Exception:
+                            pass
+                        self.sock = None
+                        return False
             except (BlockingIOError, socket.timeout):
                 # Normal non-blocking behavior: connection is healthy and waiting
                 pass
             except Exception:
                 self.connected = False
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except Exception:
+                        pass
                 self.sock = None
                 return False
             return True

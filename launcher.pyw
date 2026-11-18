@@ -542,6 +542,18 @@ class ReplayStudioApp:
     # DEDICATED FULL-HEIGHT COMBAT & ANOMALY NAVIGATOR
     # =========================================================================
     def _build_anomaly_navigator(self, container):
+        # Suspect Cheater Overview & Threat Matrix Bar
+        self.frame_suspect_banner = tk.Frame(container, bg="#131d2e", padx=10, pady=5, relief="ridge", bd=1)
+        self.frame_suspect_banner.pack(fill="x", pady=(0, 4))
+
+        tk.Label(
+            self.frame_suspect_banner,
+            text="ANOMALY & CHEAT AUDIT OVERVIEW: Ingest a demo (.dem) to index telemetry & analyze suspect outliers.",
+            font=("Segoe UI", 9),
+            fg=self.text_muted,
+            bg="#131d2e"
+        ).pack(side="left")
+
         # Filter bar
         filter_bar = tk.Frame(container, bg=self.card_bg, pady=4)
         filter_bar.pack(fill="x")
@@ -716,6 +728,140 @@ class ReplayStudioApp:
                         fg=self.accent_cyan
                     )
 
+    def filter_to_suspect(self, name: str):
+        """1-Click quick filter to focus navigator table and timeline on a specific suspect."""
+        self.var_filter_player.set(name)
+        self.var_filter_severity.set("All Severities")
+        self.var_filter_category.set("All Categories")
+        self.var_filter_search.set("")
+        self.apply_anomaly_filters()
+        self.log(f"Filtered anomaly navigator to suspect: {name}")
+
+    def _update_suspect_overview(self):
+        """Analyzes anomaly distribution across players and highlights single outlier suspects."""
+        for w in self.frame_suspect_banner.winfo_children():
+            w.destroy()
+
+        if not self.anomalies:
+            tk.Label(
+                self.frame_suspect_banner,
+                text="ANOMALY OVERVIEW: No combat events indexed.",
+                font=("Segoe UI", 9),
+                fg=self.text_muted,
+                bg="#131d2e"
+            ).pack(side="left")
+            return
+
+        # Aggregate stats per player
+        stats = {}
+        total_critical = 0
+        total_suspicious = 0
+
+        for e in self.anomalies:
+            p = e.get("player")
+            if not p:
+                continue
+            if p not in stats:
+                stats[p] = {"critical": 0, "suspicious": 0, "info": 0, "total": 0}
+            stats[p]["total"] += 1
+            sev = e.get("severity")
+            if sev == "CRITICAL":
+                stats[p]["critical"] += 1
+                total_critical += 1
+            elif sev == "SUSPICIOUS":
+                stats[p]["suspicious"] += 1
+                total_suspicious += 1
+            else:
+                stats[p]["info"] += 1
+
+        # Sort players by threat score: critical * 3 + suspicious
+        ranked = sorted(
+            stats.items(),
+            key=lambda x: (x[1]["critical"] * 3 + x[1]["suspicious"], x[1]["critical"]),
+            reverse=True
+        )
+
+        # Determine if single outlier cheater is flagged
+        outlier_suspect = None
+        if ranked:
+            top_name, top_stats = ranked[0]
+            top_score = top_stats["critical"] * 3 + top_stats["suspicious"]
+            second_score = (ranked[1][1]["critical"] * 3 + ranked[1][1]["suspicious"]) if len(ranked) > 1 else 0
+
+            # Outlier condition: top player has >= 2 critical snaps and accounts for >= 50% of criticals or 2.5x runner-up
+            if top_stats["critical"] >= 2 and (total_critical <= 1 or (top_stats["critical"] / max(1, total_critical)) >= 0.5 or top_score >= second_score * 2.5):
+                outlier_suspect = (top_name, top_stats)
+
+        # Header / Threat Label
+        if outlier_suspect:
+            suspect_name, s_data = outlier_suspect
+            pct = int((s_data["critical"] / max(1, total_critical)) * 100) if total_critical > 0 else 100
+
+            tk.Label(
+                self.frame_suspect_banner,
+                text="🚨 PRIMARY ANOMALY OUTLIER FLAGGED:",
+                font=("Segoe UI", 9, "bold"),
+                fg="#f87171",
+                bg="#131d2e"
+            ).pack(side="left", padx=(0, 6))
+
+            btn_focus = tk.Button(
+                self.frame_suspect_banner,
+                text=f"{suspect_name} ({s_data['critical']} Snaps / {pct}% Match Share) 🔍 Focus Suspect",
+                font=("Consolas", 8, "bold"),
+                bg="#7f1d1d",
+                fg="#fef2f2",
+                activebackground="#991b1b",
+                activeforeground="#ffffff",
+                relief="flat",
+                padx=8,
+                pady=1,
+                cursor="hand2",
+                command=lambda name=suspect_name: self.filter_to_suspect(name)
+            )
+            btn_focus.pack(side="left", padx=4)
+        elif total_critical == 0:
+            tk.Label(
+                self.frame_suspect_banner,
+                text="✔ MATCH INTEGRITY CLEAN: Zero Critical Aimbot Snaps detected.",
+                font=("Segoe UI", 9, "bold"),
+                fg=self.accent_emerald,
+                bg="#131d2e"
+            ).pack(side="left")
+        else:
+            tk.Label(
+                self.frame_suspect_banner,
+                text=f"COMBAT ANOMALY MATRIX ({total_critical} Critical, {total_suspicious} Suspicious across {len(stats)} players):",
+                font=("Segoe UI", 9, "bold"),
+                fg=self.accent_cyan,
+                bg="#131d2e"
+            ).pack(side="left", padx=(0, 6))
+
+        # Right side: Player quick filter badges for players with any critical/suspicious hits
+        badges_frame = tk.Frame(self.frame_suspect_banner, bg="#131d2e")
+        badges_frame.pack(side="right")
+
+        for p_name, p_data in ranked[:4]:
+            if p_data["critical"] == 0 and p_data["suspicious"] == 0:
+                continue
+            badge_text = f"{p_name}: {p_data['critical']}⚡ {p_data['suspicious']}⚠"
+            badge_bg = "#450a0a" if p_data["critical"] >= 2 else "#2e1065" if p_data["critical"] == 1 else "#1e293b"
+            badge_fg = "#fca5a5" if p_data["critical"] >= 2 else "#d8b4fe" if p_data["critical"] == 1 else "#cbd5e1"
+
+            b_btn = tk.Button(
+                badges_frame,
+                text=badge_text,
+                font=("Consolas", 8),
+                bg=badge_bg,
+                fg=badge_fg,
+                relief="flat",
+                padx=5,
+                pady=1,
+                cursor="hand2",
+                command=lambda name=p_name: self.filter_to_suspect(name)
+            )
+            b_btn.pack(side="left", padx=2)
+
     def apply_anomaly_filters(self):
         """Filters anomaly list and populates Treeview."""
         cat_filter = self.var_filter_category.get()
@@ -867,33 +1013,47 @@ class ReplayStudioApp:
         self.txt_console.see("end")
 
     def _start_engine_poll(self):
-        """Polls Netcon link every 1.0s to maintain live connection status."""
-        def _poll_loop():
-            while True:
-                time.sleep(1.0)
+        """Polls Netcon link periodically on the Tk main thread with non-blocking worker link."""
+        def _poll_step():
+            if not self.root or not self.root.winfo_exists():
+                return
+            try:
+                # Read configured port safely on main thread
                 try:
-                    if not self.root or not self.root.winfo_exists():
-                        break
-
-                    # Update port from UI if customized
-                    try:
-                        p = int(self.var_netcon_port.get().strip())
-                        self.netcon.port = p
-                    except Exception:
-                        pass
-
-                    # Poll connection status continuously
-                    if not self.netcon.is_connected():
-                        self.netcon.try_connect()
-
-                    is_conn = self.netcon.is_connected()
-                    status_txt = f"● Netcon: Connected ({self.netcon.port})" if is_conn else "○ Netcon: Standby"
-                    status_col = self.accent_emerald if is_conn else self.text_muted
-                    self.root.after(0, lambda: self.lbl_netcon_status.config(text=status_txt, fg=status_col))
+                    p = int(self.var_netcon_port.get().strip())
+                    self.netcon.port = p
                 except Exception:
-                    break
+                    pass
 
-        threading.Thread(target=_poll_loop, daemon=True).start()
+                # Check connection status
+                is_conn = self.netcon.is_connected()
+                if not is_conn:
+                    # Attempt connection in background thread so UI never hangs
+                    def _async_conn():
+                        self.netcon.try_connect()
+                    threading.Thread(target=_async_conn, daemon=True).start()
+
+                # Process detection
+                is_running = CS2NetconClient.is_cs2_process_running()
+
+                if is_conn:
+                    status_txt = f"● Netcon: Connected ({self.netcon.port})"
+                    status_col = self.accent_emerald
+                elif is_running:
+                    status_txt = f"◐ CS2 Active: Linking ({self.netcon.port})..."
+                    status_col = "#f59e0b"
+                else:
+                    status_txt = "○ Netcon: Standby"
+                    status_col = self.text_muted
+
+                self.lbl_netcon_status.config(text=status_txt, fg=status_col)
+            except Exception:
+                pass
+            finally:
+                if self.root and self.root.winfo_exists():
+                    self.root.after(1000, _poll_step)
+
+        self.root.after(1000, _poll_step)
 
     # =========================================================================
     # DEMO INGESTION & LAUNCHER ACTIONS
@@ -943,6 +1103,7 @@ class ReplayStudioApp:
             self.log(f"Scan complete: {len(events)} live combat events indexed (Snaps: {analytics.get('snaps_count')}, Triggers: {analytics.get('trigger_count')}, Desyncs: {analytics.get('desync_count')})")
 
             self.apply_anomaly_filters()
+            self._update_suspect_overview()
             self.draw_timeline()
         else:
             self.log(f"Error reading demo: {info.get('error', 'Invalid format')}")

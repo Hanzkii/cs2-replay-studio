@@ -1,5 +1,5 @@
 {
-  "version": "1.9.0",
-  "commit_sha": "cb9ba8e",
-  "commit_msg": "docs: rename project to cs2-replay-studio and update readme with 3D raycast architecture & roadmap"
+  "version": "1.9.1",
+  "commit_sha": "be5b1bb",
+  "commit_msg": "chore: remove unused panorama directory"
 }
